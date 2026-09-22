@@ -22,11 +22,20 @@ from psycopg2 import pool as pg_pool
 from app.config import get_settings
 
 
-class RedshiftQueryError(Exception):
+class RedshiftError(Exception):
+    """Base class for anything that should surface as a clean error response
+    from /query, instead of falling through to FastAPI's blank default 500."""
+
+
+class RedshiftQueryError(RedshiftError):
     pass
 
 
-class RedshiftCredentialsError(Exception):
+class RedshiftConnectionError(RedshiftError):
+    pass
+
+
+class RedshiftCredentialsError(RedshiftError):
     pass
 
 
@@ -76,21 +85,35 @@ class RedshiftClient:
         # Deliberately does not set `search_path` / any default schema. Every query
         # run through this client must fully qualify `schema.table` itself - see
         # app/routes/query.py.
-        self._pool = pg_pool.ThreadedConnectionPool(
-            minconn=settings.pool_min_conns,
-            maxconn=settings.pool_max_conns,
-            host=settings.redshift_host,
-            port=settings.redshift_port,
-            dbname=settings.redshift_database,
-            user=username,
-            password=password,
-            connect_timeout=10,
-            options=f"-c statement_timeout={int(settings.query_timeout_seconds * 1000)}",
-        )
+        try:
+            self._pool = pg_pool.ThreadedConnectionPool(
+                minconn=settings.pool_min_conns,
+                maxconn=settings.pool_max_conns,
+                host=settings.redshift_host,
+                port=settings.redshift_port,
+                dbname=settings.redshift_database,
+                user=username,
+                password=password,
+                connect_timeout=10,
+                options=f"-c statement_timeout={int(settings.query_timeout_seconds * 1000)}",
+            )
+        except Exception as exc:
+            # Most commonly: no network path to Redshift (VPN tunnel down,
+            # security group, wrong host) or wrong credentials. Without this,
+            # the raw psycopg2/OperationalError would propagate straight out of
+            # get_redshift_client() and never hit /query's own error handling,
+            # showing up to callers as a blank "Internal Server Error".
+            raise RedshiftConnectionError(
+                f"Could not connect to Redshift at {settings.redshift_host}:{settings.redshift_port} "
+                f"(db={settings.redshift_database}): {exc}"
+            ) from exc
 
     @contextmanager
     def _connection(self):
-        conn = self._pool.getconn()
+        try:
+            conn = self._pool.getconn()
+        except Exception as exc:
+            raise RedshiftConnectionError(f"Could not get a connection from the pool: {exc}") from exc
         try:
             yield conn
         finally:

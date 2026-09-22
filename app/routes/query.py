@@ -16,7 +16,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.governance.audit import log_query
 from app.governance.masking import mask_record
 from app.models import QueryRequest, QueryResponse
-from app.redshift_client import RedshiftQueryError, get_redshift_client
+from app.redshift_client import RedshiftError, get_redshift_client
 
 router = APIRouter()
 
@@ -27,9 +27,13 @@ async def run_query(body: QueryRequest, request: Request) -> QueryResponse:
 
     try:
         rows = await run_in_threadpool(get_redshift_client().execute, body.sql)
-    except RedshiftQueryError as exc:
+    except RedshiftError as exc:
+        # Covers query failures (bad SQL, Redshift-side error) as well as
+        # connection/credentials failures (VPN down, wrong host, bad
+        # credentials file) - all of these should come back as a real JSON
+        # error rather than falling through to a blank 500.
         log_query(client_host=client_host, sql=body.sql, row_count=None, status="failed")
-        raise HTTPException(status_code=502, detail=f"Redshift query failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"Redshift request failed: {exc}") from exc
 
     masked_rows = [mask_record(r) for r in rows]
 
