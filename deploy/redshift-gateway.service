@@ -1,0 +1,20 @@
+# Example systemd unit for running the gateway directly on an EC2 instance that
+# already has network access to Redshift (e.g. via the Client VPN tunnel, or once
+# proper VPC connectivity is in place). Copy to /etc/systemd/system/ and adjust
+# WorkingDirectory/User/EnvironmentFile paths.
+[Unit]
+Description=Mosaic Common Services - Redshift Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=gateway
+WorkingDirectory=/opt/redshift-gateway
+EnvironmentFile=/opt/redshift-gateway/.env
+ExecStart=/opt/redshift-gateway/.venv/bin/gunicorn -k uvicorn.workers.UvicornWorker app.main:app -w 2 -b 0.0.0.0:8000
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
