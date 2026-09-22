@@ -1,9 +1,11 @@
 """Append-only audit logging for every query the gateway runs.
 
-Writes independently of the caller's own logging, so the audit trail exists even if
-the calling service's logs are lost or the caller misbehaves. Defaults to structured
-stdout logging (captured by CloudWatch/journald); swap in a DynamoDB/Redshift sink
-by implementing AuditSink and wiring it in `main.py`.
+There's no per-caller identity anymore (see ARCHITECTURE.md - this service relies
+on network-level protection, not application auth), so we log the request's source
+IP instead of a caller identity. Writes independently of the caller's own logging,
+so the audit trail exists even if the calling service's logs are lost. Defaults to
+structured stdout logging (captured by CloudWatch/journald); swap in a
+DynamoDB/Redshift sink by implementing AuditSink and wiring it in `main.py`.
 """
 import datetime
 import json
@@ -32,8 +34,7 @@ def set_audit_sink(sink: AuditSink) -> None:
 
 def log_query(
     *,
-    caller_service: str,
-    caller_arn: str,
+    client_host: str | None,
     sql: str,
     row_count: int | None,
     status: str,
@@ -41,8 +42,7 @@ def log_query(
     _sink.write(
         {
             "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
-            "caller_service": caller_service,
-            "caller_arn": caller_arn,
+            "client_host": client_host,
             "sql": sql,
             "row_count": row_count,
             "status": status,

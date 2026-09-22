@@ -19,8 +19,8 @@ long-lived process, not Lambda.
 
 Run the Dockerfile as an ECS service on a task with an ENI in a subnet that has
 proper network connectivity to Redshift (peering/Transit Gateway/PrivateLink -
-no VPN client to babysit). Put an API Gateway HTTP API (AWS_IAM authorizer) in
-front with a VPC Link to an internal ALB/NLB pointing at the service. Configure the
-HTTP API integration to map `$context.authorizer.iam.userArn` to the
-`x-verified-caller-arn` request header (see `app/auth.py`), and lock the ALB/NLB's
-security group down to only accept traffic from the VPC Link.
+no VPN client to babysit). There's no application-level auth in front of this
+service (see ARCHITECTURE.md's "Why no application-level auth") - whatever fronts
+it (an internal ALB/NLB, or nothing at all if only specific hosts need to reach it
+directly), lock its security group down to only the specific hosts/services that
+should be able to call `/query`, and never expose it to the open internet.

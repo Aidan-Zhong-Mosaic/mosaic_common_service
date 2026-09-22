@@ -36,10 +36,9 @@ def _load_credentials(credentials_file: str) -> tuple[str, str]:
         {"username": "svc_insurance_data_gateway", "password": "..."}
 
     This is NOT IAM database auth - Redshift here is configured for regular
-    username/password auth, so there's no IAM role to assume for the DB connection
-    itself (separate from the AWS_IAM authorizer in front of the HTTP API, which is
-    unrelated to how we talk to Redshift). Keep this file out of git (see
-    .gitignore) and restrict its permissions - we check for that below and refuse
+    username/password auth, so there's no IAM role to assume for the DB connection.
+    Keep this file out of git (see .gitignore) and restrict its permissions - we
+    check for that below and refuse
     to start if the file is group/world-readable.
     """
     path = Path(credentials_file)

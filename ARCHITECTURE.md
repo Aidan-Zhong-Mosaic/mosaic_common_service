@@ -13,8 +13,9 @@ connections. If every microservice (Node, Python, Java, ...) opens its own
 connection, we hit connection limits and lose any single place to enforce access
 control or audit logging — that logic would have to be reimplemented per service
 and will drift. So the actual Redshift access logic lives in one backend; callers
-just hit its REST API with a SigV4-signed request using their own IAM role — no
-custom client library required, any AWS SDK can sign a plain HTTP request.
+just hit its plain REST API — no custom client library, no signing, no auth header.
+Access is controlled at the network level instead (see "Security model" below), not
+per-request application auth.
 
 ## Network connectivity to Redshift (important context, read before deploying)
 
@@ -56,36 +57,24 @@ the VPN unit).
 ## Components
 
 ```
-   mosaic-ai-chat   ───▶  API Gateway (HTTP API, AWS_IAM authorizer)
-   other service    ───▶            │  SigV4-verified
-                                     │  (caller ARN forwarded as
-                                     │   x-verified-caller-arn header)
+   mosaic-ai-chat   ───▶  (security group: only trusted hosts admitted)
+   other service    ───▶            │
                                      ▼
-                          VPC Link ──▶ ALB/NLB ──▶ Insurance Data Gateway
-                                                    (long-running FastAPI process:
-                                                     EC2/systemd or ECS/Fargate)
-                                                      ┌─────────────────────┐
-                                                      │ auth/identity        │
-                                                      │ caller allow-list     │
-                                                      │ PII/PHI masking       │
-                                                      │ audit logging         │
-                                                      └─────────┬───────────┘
-                                                                ▼
-                                                    ┌──────────────────────┐
-                                                    │ psycopg2 pooled conn  │
-                                                    │ (no schema set - every│
-                                                    │  query is schema.table)│
-                                                    │ over VPN/peering/     │
-                                                    │ PrivateLink to Redshift│
-                                                    └──────────────────────┘
+                          Insurance Data Gateway
+                          (long-running FastAPI process: EC2/systemd or ECS/Fargate)
+                            ┌─────────────────────┐
+                            │ PII/PHI masking       │
+                            │ audit logging         │
+                            └─────────┬───────────┘
+                                      ▼
+                          ┌──────────────────────┐
+                          │ psycopg2 pooled conn  │
+                          │ (no schema set - every│
+                          │  query is schema.table)│
+                          │ over VPN/peering/     │
+                          │ PrivateLink to Redshift│
+                          └──────────────────────┘
 ```
-
-- **API Gateway (HTTP API) with an AWS_IAM authorizer** — every caller signs
-  requests with SigV4 using its own IAM role. API Gateway verifies the signature
-  before the request reaches our code. The verified caller identity is forwarded to
-  the backend as a request header (`x-verified-caller-arn`, via an integration
-  request parameter mapping from `$context.authorizer.iam.userArn`), since the
-  gateway is no longer a Lambda that receives the raw event.
 
 - **Gateway backend (Python, FastAPI)** — runs as a **long-lived process**
   (systemd on EC2, or an ECS/Fargate task), not Lambda, because it holds a real
@@ -96,43 +85,58 @@ the VPN unit).
   against the pool. The connection never sets a schema/`search_path`, so every
   query must fully qualify `schema.table` itself.
 
-- **Governance layer** (inside the gateway, not optional/bolt-on, but narrower than
-  a template-based design would allow - see below):
-  - *Access control*: only gates whether a caller's IAM identity is allowed to hit
-    `/query` at all (`app/governance/access_control.py`) - it cannot restrict which
-    tables/schemas a permitted caller queries, since the SQL is arbitrary.
+- **Security model: network-only, no application auth.** There's no API key,
+  no IAM check, nothing at the application layer - a security group on whatever
+  host runs this is the only thing controlling who can reach `/query` at all. This
+  was a deliberate choice (see "Why no application-level auth" below), not an
+  oversight - it needs to be kept in mind when deciding what else gets network
+  access to this host.
+
+- **Governance layer that remains** (inside the gateway):
   - *Masking*: known PII/PHI field names (SSN, DOB, policyholder name, etc.) are
     masked wherever they appear in a result, by column name, regardless of the
-    query that produced them (`app/governance/masking.py`).
-  - *Audit logging*: every request logs caller identity, the full SQL text, row
+    query that produced them or who's calling - there's no per-caller grant to be
+    more permissive (`app/governance/masking.py`).
+  - *Audit logging*: every request logs the source IP, the full SQL text, row
     count, and status, independent of the caller's own logs
     (`app/governance/audit.py`).
 
-- **Callers** — no SDK to install. Any service signs a plain HTTPS request with
-  SigV4 using its own IAM role (every language's AWS SDK can do this) and calls
-  `POST /query` directly with `{"sql": "..."}`.
+- **Callers** — no SDK, no signing, no headers. Any process that can reach the host
+  makes a plain HTTP `POST /query` with `{"sql": "..."}`.
 
 ## Request flow
 
-Caller → SigV4-signed `POST /query` → API Gateway verifies signature, forwards
-caller ARN → gateway checks the caller is on the allow-list → SQL runs against the
-pooled connection (bounded by a `statement_timeout`,
-`GATEWAY_QUERY_TIMEOUT_SECONDS`, so a runaway query can't hold a pool slot
-indefinitely; executed via FastAPI's threadpool so it doesn't block other
-requests) → result rows are masked by column name → audit logged → returned.
+Caller → plain `POST /query` (reaches the gateway only if the security group
+admits that source) → SQL runs against the pooled connection (bounded by a
+`statement_timeout`, `GATEWAY_QUERY_TIMEOUT_SECONDS`, so a runaway query can't hold
+a pool slot indefinitely; executed via FastAPI's threadpool so it doesn't block
+other requests) → result rows are masked by column name → audit logged → returned.
+
+## Why no application-level auth
+
+This was a deliberate simplification, not an oversight, worth being explicit about:
+there is currently no IAM/API-key/token check on `/query`, so the entire security
+boundary is the network (security group). Combined with `/query` accepting
+arbitrary SQL (see below), anything that can reach the port has full,
+unauthenticated access to run any query against Redshift. An earlier design used an
+API-Gateway-verified IAM identity per caller specifically to get application-level
+access control; that was dropped in favor of relying purely on network placement.
+If this ever needs to be exposed beyond a small set of trusted internal hosts (more
+callers, a less trusted network, compliance requirements), application-level auth
+should be revisited before that happens - reintroducing either a shared secret/API
+key or the previous IAM-based design.
 
 ## Why one raw-SQL endpoint instead of named query templates
 
-This is a deliberate simplification, worth being explicit about: accepting
-arbitrary SQL means access control and masking can only work at the caller level
-(allowed to use the gateway at all) and generically on column names, not per
-table/schema/query. An earlier design used named, parameterized query templates
-reviewed like schema changes specifically to get finer-grained governance; that
-tradeoff was dropped here in favor of a much simpler surface. If per-table/column
-enforcement becomes a real requirement later (e.g. once more than one team is
-calling this and they shouldn't all see the same tables), that's the point to
-revisit - either by validating/allow-listing referenced schemas per caller, or by
-reintroducing named templates for the callers that need tighter scoping.
+Also deliberate: accepting arbitrary SQL means masking can only work generically on
+column names, never per table/schema/query, and (per above) there's no way to
+restrict which tables a caller can touch short of the network layer. An earlier
+design used named, parameterized query templates reviewed like schema changes
+specifically to get finer-grained governance; that tradeoff was dropped here in
+favor of a much simpler surface. If per-table/column enforcement becomes a real
+requirement later (e.g. once more than one team is calling this and they shouldn't
+all see the same tables), that's the point to revisit - either by
+validating/allow-listing referenced schemas, or by reintroducing named templates.
 
 ## Repo layout
 
@@ -143,20 +147,16 @@ insurance-data-gateway/
   app/
     main.py
     config.py
-    auth.py
     redshift_client.py
     models.py
     governance/
-      access_control.py
       masking.py
       audit.py
     routes/
       health.py
       query.py
   tests/
-  deploy/                  # systemd unit + ECS/API Gateway notes
-  policies/
-    example-consumer-iam-policy.json
+  deploy/                  # systemd unit + ECS notes
   requirements.txt
   Dockerfile
 ```
@@ -166,9 +166,12 @@ insurance-data-gateway/
 - **Network path to Redshift** — replace the personal Client VPN certificate with a
   dedicated server credential (scoped route + authorization rule), or better, VPC
   peering / Transit Gateway / a PrivateLink endpoint in the gateway's own VPC.
-- Whether per-table/schema access control is needed once more callers exist (see
-  "Why one raw-SQL endpoint" above) - the current design trusts every allow-listed
-  caller with the full schema.
+- **Security group scope for this host** — needs to be defined and kept tight (see
+  "Why no application-level auth" above) since it's the only access control that
+  exists right now.
+- Whether/when application-level auth and per-table access control need to come
+  back (see the two "Why" sections above) - revisit if more callers, a less
+  trusted network, or compliance requirements show up.
 - Which fields count as PII/PHI for masking, and who owns that classification?
 - Audit log destination and retention (compliance will likely require a retention
   period) — currently logs to stdout only.

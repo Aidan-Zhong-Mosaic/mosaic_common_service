@@ -7,3 +7,8 @@ dist/
 .idea/
 redshift-credentials.json
 *credentials*.json
+sshkey
+sshkey.pub
+*.pem
+id_rsa*
+id_ed25519*

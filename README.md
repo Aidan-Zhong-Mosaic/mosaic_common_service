@@ -1,13 +1,14 @@
 # Insurance Data Gateway
 
-A Python/FastAPI backend exposing one IAM-authenticated endpoint for running SQL
-against our Redshift insurance data warehouse, so any microservice (regardless of
-language) can call it instead of connecting to Redshift directly.
+A Python/FastAPI backend exposing one endpoint for running SQL against our
+Redshift insurance data warehouse, so any microservice (regardless of language)
+can call it instead of connecting to Redshift directly.
 
 Read **[ARCHITECTURE.md](./ARCHITECTURE.md)** first — it covers why this is a
 gateway service rather than every microservice connecting directly, the current
 network-path-to-Redshift situation (a personal Client VPN certificate is being used
-as a stopgap), and what's *not* enforced given the single raw-SQL endpoint.
+as a stopgap), and what's *not* enforced given the single raw-SQL endpoint and no
+application-level auth.
 
 ## What it exposes
 
@@ -19,14 +20,24 @@ as a stopgap), and what's *not* enforced given the single raw-SQL endpoint.
 `/query` must fully qualify tables as `schema.table` — there is no "current" schema
 to fall back on.
 
+## Security model: network-only
+
+There is **no application-level auth** on `/query` — no API key, no IAM check,
+nothing. Access is controlled entirely by network reachability: the security group
+on whatever host runs this service should only allow inbound traffic from the
+specific hosts/services that are meant to call it (e.g. mosaic-ai-chat's server),
+nothing else, and never the open internet. Since `/query` also accepts arbitrary
+SQL, anything that *can* reach this port can run anything against Redshift - the
+security group is the only thing standing between "reachable" and "full access," so
+keep it tight and review it whenever a new caller needs access.
+
 ## Calling it
 
-No client library needed — it's a plain REST API behind API Gateway's `AWS_IAM`
-authorizer. Any AWS SDK can sign a request with SigV4 using the calling service's
-own IAM role/credentials (`service = execute-api`) and call it directly:
+No client library, no signing, no auth header — it's a plain REST call from
+anything that can reach the host:
 
 ```
-POST https://<api-id>.execute-api.eu-west-1.amazonaws.com/query
+POST http://<gateway-host>:8000/query
 {"sql": "SELECT * FROM insurance.policies WHERE policy_id = '123'"}
 ```
 
@@ -37,13 +48,8 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Locally there is no API Gateway in front of the service, so `auth.py` requires the
-`x-verified-caller-arn` header directly — set it to one of the ARNs registered in
-`app/governance/access_control.py` to exercise access control locally, e.g.:
-
 ```
 curl -X POST localhost:8000/query \
-  -H 'x-verified-caller-arn: arn:aws:iam::111111111111:role/mosaic-ai-chat' \
   -H 'content-type: application/json' \
   -d '{"sql": "SELECT * FROM insurance.policies LIMIT 1"}'
 ```
@@ -71,13 +77,5 @@ by `.gitignore`, but double check before pushing.
 
 Holds a real connection pool, so it runs as a long-lived process, not Lambda — see
 `deploy/README.md` for a systemd (EC2) example and the recommended ECS/Fargate path.
-
-## Requesting access for a new service
-
-1. Give the platform team the service's IAM role ARN.
-2. Platform team adds a grant for that role in `app/governance/access_control.py`
-   (this only gates whether the caller can hit `/query` at all - see
-   ARCHITECTURE.md for why there's no per-table/per-query control right now).
-3. Attach `policies/example-consumer-iam-policy.json` (with the real API ID filled
-   in) to that role — invoke-only, this only lets them call the gateway's HTTP API,
-   not touch Redshift or the credentials file directly.
+Whatever runs it, lock down the security group as described above before pointing
+any real caller at it.
