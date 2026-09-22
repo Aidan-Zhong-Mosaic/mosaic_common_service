@@ -6,7 +6,7 @@ task within the VPC). No application-level auth - protection is network-level on
 ARCHITECTURE.md.
 
 Local dev: `uvicorn app.main:app --reload`
-Production: `gunicorn -k uvicorn.workers.UvicornWorker app.main:app -w 2 -b 0.0.0.0:8000`
+Production: `gunicorn -k uvicorn.workers.UvicornWorker app.main:app -w 2 -b 0.0.0.0:8339`
 """
 from fastapi import FastAPI
 

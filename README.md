@@ -37,7 +37,7 @@ No client library, no signing, no auth header — it's a plain REST call from
 anything that can reach the host:
 
 ```
-POST http://<gateway-host>:8000/query
+POST http://<gateway-host>:8339/query
 {"sql": "SELECT * FROM insurance.policies WHERE policy_id = '123'"}
 ```
 
@@ -49,7 +49,7 @@ uvicorn app.main:app --reload
 ```
 
 ```
-curl -X POST localhost:8000/query \
+curl -X POST localhost:8339/query \
   -H 'content-type: application/json' \
   -d '{"sql": "SELECT * FROM insurance.policies LIMIT 1"}'
 ```
