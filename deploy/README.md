@@ -15,6 +15,40 @@ long-lived process, not Lambda.
    see ARCHITECTURE.md's networking note about getting the server its own dedicated
    path instead of depending on a shared/personal VPN profile.
 
+## Running as a Docker container on this same EC2
+
+`docker-compose.yml` (repo root) wraps the run configuration below so this is just:
+
+```bash
+cd ~/mosaic_common_service
+docker compose up -d --build
+```
+
+That's equivalent to the manual `docker build` + `docker run` this replaces, and
+does exactly two things worth understanding, not just running blindly:
+
+- **`network_mode: host`** - the VPN tunnel runs on the *host*, outside the
+  container. Docker's default networking gives a container its own isolated
+  network namespace, which would NOT see the host's `tun0` route to Redshift.
+  `network_mode: host` makes the container share the host's network stack
+  directly, the same way running uvicorn on the host does. This also means there's
+  no port mapping - the app binds directly to the port set in the Dockerfile's
+  `CMD` (currently 8339) on the host itself.
+- **The credentials file is bind-mounted, not baked into the image.** It stays on
+  the host at `/etc/mosaic_common_service/redshift-credentials.json` (outside the
+  repo and outside the image), mounted read-only at the same path
+  `GATEWAY_REDSHIFT_CREDENTIALS_FILE` expects. A secret baked into a Docker image
+  would be stuck in every layer and any registry push, permanently - `docker
+  compose up` being one command doesn't change that risk, so this still isn't
+  something to fold into the Dockerfile/image itself.
+
+`.env` (repo root, gitignored) should hold the same `GATEWAY_*` vars as the
+non-Docker path. Make sure the VPN tunnel is up on the host *before* running
+`docker compose up` - `restart: unless-stopped` handles the container crashing or
+Redshift being briefly unreachable, but won't bring the tunnel back up itself.
+
+Check it: `docker compose logs -f`, then `curl localhost:8339/health` from the host.
+
 ## Recommended path: ECS/Fargate inside the VPC
 
 Run the Dockerfile as an ECS service on a task with an ENI in a subnet that has

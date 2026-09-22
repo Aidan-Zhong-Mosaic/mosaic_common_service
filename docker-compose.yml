@@ -1,0 +1,15 @@
+services:
+  mosaic-common-service:
+    build: .
+    image: mosaic-common-service
+    container_name: mosaic-common-service
+    network_mode: host   # shares the host's network stack, so it sees the VPN
+                          # tunnel's route to Redshift - see deploy/README.md
+    env_file:
+      - .env
+    volumes:
+      # Credentials file lives on the host, outside the image/repo - never baked
+      # into the image itself. Path on the right must match
+      # GATEWAY_REDSHIFT_CREDENTIALS_FILE in .env (defaults to this path).
+      - /etc/mosaic_common_service/redshift-credentials.json:/etc/mosaic_common_service/redshift-credentials.json:ro
+    restart: unless-stopped
