@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "dashboard-auth-proxy.fullname" . }}
+  labels:
+    {{- include "dashboard-auth-proxy.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "dashboard-auth-proxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "dashboard-auth-proxy.selectorLabels" . | nindent 8 }}
+      annotations:
+        # Forces a rollout when the htpasswd Secret or nginx config changes -
+        # otherwise a `helm upgrade` after rotating credentials wouldn't
+        # restart the running pod.
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+    spec:
+      containers:
+        - name: nginx
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: nginx-conf
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
+              readOnly: true
+            - name: htpasswd
+              mountPath: /etc/nginx/auth
+              readOnly: true
+      volumes:
+        - name: nginx-conf
+          configMap:
+            name: {{ include "dashboard-auth-proxy.fullname" . }}
+        - name: htpasswd
+          secret:
+            secretName: {{ .Values.htpasswd.existingSecret }}
+            items:
+              - key: {{ .Values.htpasswd.existingSecretKey }}
+                path: .htpasswd
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

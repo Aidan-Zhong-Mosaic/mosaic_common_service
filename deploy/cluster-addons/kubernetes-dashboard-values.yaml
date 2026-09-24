@@ -1,0 +1,17 @@
+# Override values for the official kubernetes-dashboard chart
+# (https://github.com/kubernetes/dashboard - repo:
+# https://kubernetes.github.io/dashboard/). Chart schema shifts between
+# major versions (v7 bundles a Kong gateway in front of the app; older
+# versions don't) - sanity check these keys against whatever you actually
+# pull with:
+#   helm show values kubernetes-dashboard/kubernetes-dashboard
+# before installing, and adjust dashboard-auth-proxy/values.yaml's
+# `upstream` block to match the real Service name/port it creates.
+
+# Not exposed directly - dashboard-auth-proxy sits in front of it (see
+# ../dashboard-auth-proxy/) and is the only thing that should ever be
+# reachable from outside the cluster. If the chart's own ingress/ or
+# kong.proxy.type default to anything other than ClusterIP, turn it off.
+kong:
+  proxy:
+    type: ClusterIP

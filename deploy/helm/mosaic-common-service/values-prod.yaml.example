@@ -1,0 +1,20 @@
+# Copy to values-prod.yaml (gitignored) and fill in, or pass the equivalent
+# via --set on the helm command line. Never commit a filled-in copy of this file.
+
+image:
+  repository: "123456789012.dkr.ecr.us-east-1.amazonaws.com/mosaic-common-service"
+  tag: "0.3.0"
+
+replicaCount: 2
+
+config:
+  redshiftHost: "your-cluster.xxxxxxxxxxxx.us-east-1.redshift.amazonaws.com"
+
+# Pre-create this Secret yourself (see README-deploy.md) - do not set
+# redshiftCredentials.create/username/password here.
+redshiftCredentials:
+  existingSecret: mosaic-common-service-redshift-credentials
+
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::123456789012:role/mosaic-common-service"

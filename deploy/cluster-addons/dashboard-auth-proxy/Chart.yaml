@@ -1,0 +1,6 @@
+apiVersion: v2
+name: dashboard-auth-proxy
+description: HTTP Basic Auth gate in front of the Kubernetes Dashboard - a small nginx, no Cognito/OIDC required
+type: application
+version: 0.1.0
+appVersion: "1.0.0"

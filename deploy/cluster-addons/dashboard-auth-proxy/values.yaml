@@ -1,0 +1,55 @@
+# Default values for dashboard-auth-proxy.
+
+image:
+  repository: nginx
+  tag: 1.27-alpine
+  pullPolicy: IfNotPresent
+
+replicaCount: 1
+port: 80
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 128Mi
+
+# The Kubernetes Dashboard's own Service to sit in front of. Confirm the
+# exact name/port/scheme after installing the dashboard chart with:
+#   kubectl -n kubernetes-dashboard get svc
+# Recent dashboard chart versions (v7+) front the app with Kong, typically
+# as "<release>-kong-proxy" on port 443 (HTTPS, self-signed cert) - hence
+# scheme: https and sslVerify: false below. Older versions expose
+# "kubernetes-dashboard" directly on 443 instead.
+upstream:
+  host: kubernetes-dashboard-kong-proxy.kubernetes-dashboard.svc.cluster.local
+  port: 443
+  scheme: https
+  sslVerify: false
+
+# htpasswd file, one line per user (`htpasswd -c .htpasswd <user>`, or
+# `openssl passwd -apr1` if you don't have the apache2-utils package).
+# Pre-create this Secret yourself - see cluster-addons section of
+# deploy/PLATFORM.md:
+#   kubectl -n kubernetes-dashboard create secret generic dashboard-auth-htpasswd \
+#     --from-file=.htpasswd=./.htpasswd
+htpasswd:
+  existingSecret: ""
+  existingSecretKey: .htpasswd
+
+ingress:
+  enabled: false
+  className: alb
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80}]'
+  host: ""
+  path: /
+  tls: []
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

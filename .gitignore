@@ -12,3 +12,4 @@ sshkey.pub
 *.pem
 id_rsa*
 id_ed25519*
+deploy/helm/**/values-prod.yaml

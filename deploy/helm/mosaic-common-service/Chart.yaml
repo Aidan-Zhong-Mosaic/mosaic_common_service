@@ -1,0 +1,6 @@
+apiVersion: v2
+name: mosaic-common-service
+description: Mosaic Common Service - the shared backend other services call for cross-cutting capabilities (governed Redshift access today; MCP tool calls, LLM/SLM routing, and shared algorithms are on the roadmap)
+type: application
+version: 0.1.0
+appVersion: "0.3.0"

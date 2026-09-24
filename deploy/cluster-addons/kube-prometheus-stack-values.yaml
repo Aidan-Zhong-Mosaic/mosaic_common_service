@@ -1,0 +1,47 @@
+# Override values for the prometheus-community/kube-prometheus-stack chart
+# (https://github.com/prometheus-community/helm-charts). This chart has
+# hundreds of possible keys - these are just the ones worth setting
+# deliberately rather than leaving at chart defaults. Sanity check against:
+#   helm show values prometheus-community/kube-prometheus-stack
+# before installing, since the schema does shift between versions.
+
+grafana:
+  # Not exposed directly - if you want it reachable from outside the
+  # cluster, put it behind the same kind of auth gate as the k8s Dashboard
+  # (dashboard-auth-proxy, or Grafana's own built-in login - Grafana,
+  # unlike k8s Dashboard, DOES have real username/password auth out of the
+  # box, so a separate auth proxy usually isn't necessary here).
+  service:
+    type: ClusterIP
+  # Dev/quick-start only - do not commit a real password here. Prefer
+  # admin.existingSecret pointing at a Secret you create with
+  # `kubectl create secret generic grafana-admin --from-literal=admin-user=admin --from-literal=admin-password=...`
+  adminUser: admin
+  admin:
+    existingSecret: ""
+    userKey: admin-user
+    passwordKey: admin-password
+  persistence:
+    enabled: true
+    size: 5Gi
+
+prometheus:
+  prometheusSpec:
+    retention: 15d
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 20Gi
+
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 2Gi

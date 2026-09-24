@@ -1,0 +1,13 @@
+{{ include "mosaic-common-service.fullname" . }} deployed to namespace {{ .Release.Namespace }}.
+
+Check rollout status:
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/{{ include "mosaic-common-service.fullname" . }}
+
+Port-forward and hit /health:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "mosaic-common-service.fullname" . }} 8339:{{ .Values.service.port }}
+  curl localhost:8339/health
+
+Each pod opens up to {{ .Values.config.poolMaxConns }} pooled Redshift connections
+(GATEWAY_POOL_MAX_CONNS). With {{ .Values.replicaCount }} replica(s){{ if .Values.autoscaling.enabled }} (autoscaling up to {{ .Values.autoscaling.maxReplicas }}){{ end }},
+that's up to {{ mul .Values.config.poolMaxConns (ternary .Values.autoscaling.maxReplicas .Values.replicaCount .Values.autoscaling.enabled) }} concurrent connections against Redshift's connection limit - check that
+against your cluster's max_connections before scaling replicas or pool size up.

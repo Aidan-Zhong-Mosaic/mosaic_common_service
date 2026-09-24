@@ -1,0 +1,88 @@
+# Default values for mosaic-common-service - the shared backend other
+# services call into, rather than each re-implementing the same capability.
+# Redshift access is what it does today; MCP tool calls, LLM/SLM routing,
+# and other shared algorithms are expected to land here too as they're
+# built, not as separate services.
+# Override per-environment with -f values-prod.yaml or --set on the CLI.
+
+replicaCount: 2
+
+image:
+  repository: ""  # e.g. 123456789012.dkr.ecr.us-east-1.amazonaws.com/mosaic-common-service
+  tag: ""         # defaults to Chart.AppVersion if empty
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+serviceAccount:
+  create: true
+  # Set eks.amazonaws.com/role-arn here if/when this service needs an IAM role
+  # (IRSA) - e.g. to pull the Redshift credentials secret from AWS Secrets Manager
+  # via the External Secrets Operator instead of a plain kubectl-created Secret.
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+service:
+  type: ClusterIP
+  port: 8339
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+probes:
+  path: /health
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  failureThreshold: 3
+
+# Pod-level and container-level securityContext. The image (python:3.12-slim)
+# currently runs as root - relax runAsNonRoot only after adding a USER to the
+# Dockerfile, or override here once that changes.
+podSecurityContext: {}
+securityContext: {}
+
+# Non-secret GATEWAY_* settings (see app/config.py) for today's Redshift
+# capability - rendered into a ConfigMap and loaded as env vars via envFrom.
+# Expect a `config` block per capability here as more get added, not just
+# Redshift's.
+config:
+  redshiftHost: ""
+  redshiftPort: 5439
+  redshiftDatabase: "insurance"
+  poolMinConns: 2
+  poolMaxConns: 10
+  queryTimeoutSeconds: 30
+  auditLogTable: "mosaic_common_service-audit-log"
+  # Where the credentials JSON is mounted inside the container - must match the
+  # volumeMount path below, which is derived from this value automatically.
+  credentialsFilePath: /etc/mosaic_common_service/redshift-credentials.json
+
+# Redshift {"username": "...", "password": "..."} JSON, mounted read-only as a
+# single file at config.credentialsFilePath. Recommended: pre-create the Secret
+# out-of-band (kubectl, CI/CD, or External Secrets Operator syncing from AWS
+# Secrets Manager) and just point existingSecret at it, so no credential ever
+# passes through Helm values or shell history.
+redshiftCredentials:
+  existingSecret: ""              # name of a pre-created Secret; takes priority over create
+  existingSecretKey: credentials.json
+  create: false                   # dev/quick-start only, see README-deploy.md
+  username: ""
+  password: ""
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
