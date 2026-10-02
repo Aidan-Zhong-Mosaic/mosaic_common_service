@@ -14,10 +14,18 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # name|namespace|chart path|values-prod path (paths relative to this repo's root)
+# All three share the "mosaic-ai" namespace - per-service isolation was
+# tried and reverted before anything was deployed, at the infra team's
+# request (they own this cluster and asked for one shared namespace). Safe
+# either way: each chart's resources are prefixed by its own release name
+# (mosaic-common-service / worldmonitor / mosaic-ai-chat), so nothing
+# collides sharing one namespace. Use
+# `kubectl -n mosaic-ai get pods -l app.kubernetes.io/instance=<name>` to
+# scope kubectl to just one service within it.
 SERVICES=(
-  "mosaic-common-service|mosaic|deploy/helm/mosaic-common-service|deploy/helm/mosaic-common-service/values-prod.yaml"
-  "worldmonitor|worldmonitor|../worldmonitor_aidan_mosaic/deploy/helm/worldmonitor|../worldmonitor_aidan_mosaic/deploy/helm/worldmonitor/values-prod.yaml"
-  "mosaic-ai-chat|mosaic-chat|../mosaic-ai-chat/deploy/helm/mosaic-ai-chat|../mosaic-ai-chat/deploy/helm/mosaic-ai-chat/values-prod.yaml"
+  "mosaic-common-service|mosaic-ai|deploy/helm/mosaic-common-service|deploy/helm/mosaic-common-service/values-prod.yaml"
+  "worldmonitor|mosaic-ai|../worldmonitor_aidan_mosaic/deploy/helm/worldmonitor|../worldmonitor_aidan_mosaic/deploy/helm/worldmonitor/values-prod.yaml"
+  "mosaic-ai-chat|mosaic-ai|../mosaic-ai-chat/deploy/helm/mosaic-ai-chat|../mosaic-ai-chat/deploy/helm/mosaic-ai-chat/values-prod.yaml"
 )
 
 ONLY="${1:-}"

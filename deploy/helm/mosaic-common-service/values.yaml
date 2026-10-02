@@ -77,6 +77,11 @@ config:
 # Secrets Manager) and just point existingSecret at it, so no credential ever
 # passes through Helm values or shell history.
 redshiftCredentials:
+  # Off by default - the Redshift capability isn't wired up for this
+  # deployment. /health still works with this off; only /query would fail
+  # (RedshiftCredentialsError) if called. Flip to true once Redshift access
+  # is actually needed again, and set existingSecret below.
+  enabled: false
   existingSecret: ""              # name of a pre-created Secret; takes priority over create
   existingSecretKey: credentials.json
   create: false                   # dev/quick-start only, see README-deploy.md

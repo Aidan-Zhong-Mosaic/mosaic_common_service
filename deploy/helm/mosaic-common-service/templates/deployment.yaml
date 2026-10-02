@@ -47,11 +47,13 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "mosaic-common-service.fullname" . }}-config
+          {{- if .Values.redshiftCredentials.enabled }}
           volumeMounts:
             - name: redshift-credentials
               mountPath: {{ .Values.config.credentialsFilePath }}
               subPath: {{ base .Values.config.credentialsFilePath }}
               readOnly: true
+          {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.probes.path }}
@@ -68,6 +70,7 @@ spec:
             failureThreshold: {{ .Values.probes.failureThreshold }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+      {{- if .Values.redshiftCredentials.enabled }}
       volumes:
         - name: redshift-credentials
           secret:
@@ -76,6 +79,7 @@ spec:
               - key: {{ include "mosaic-common-service.credentialsSecretKey" . }}
                 path: {{ base .Values.config.credentialsFilePath }}
                 mode: 0400
+      {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

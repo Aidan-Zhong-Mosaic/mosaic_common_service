@@ -17,8 +17,8 @@ get built, rather than becoming their own services.
 
 2. Create the Redshift credentials Secret out-of-band (never through Helm values) - needed for today's Redshift capability specifically:
    ```bash
-   kubectl create namespace mosaic
-   kubectl -n mosaic create secret generic mosaic-common-service-redshift-credentials \
+   kubectl create namespace mosaic-ai   # skip if it already exists - shared with the other services
+   kubectl -n mosaic-ai create secret generic mosaic-common-service-redshift-credentials \
      --from-literal=credentials.json='{"username":"svc_insurance_data_gateway","password":"REPLACE_ME"}'
    ```
    Longer term, swap this for the External Secrets Operator syncing from AWS
@@ -32,7 +32,7 @@ get built, rather than becoming their own services.
 
 ```bash
 helm upgrade --install mosaic-common-service ./mosaic-common-service \
-  -n mosaic --create-namespace \
+  -n mosaic-ai --create-namespace \
   -f mosaic-common-service/values-prod.yaml
 ```
 
@@ -42,14 +42,14 @@ every later change.
 ## Verify
 
 ```bash
-kubectl -n mosaic rollout status deployment/mosaic-common-service
-kubectl -n mosaic port-forward svc/mosaic-common-service 8339:8339
+kubectl -n mosaic-ai rollout status deployment/mosaic-common-service
+kubectl -n mosaic-ai port-forward svc/mosaic-common-service 8339:8339
 curl localhost:8339/health
 ```
 
 ## Rollback
 
 ```bash
-helm -n mosaic history mosaic-common-service
-helm -n mosaic rollback mosaic-common-service <revision>
+helm -n mosaic-ai history mosaic-common-service
+helm -n mosaic-ai rollback mosaic-common-service <revision>
 ```

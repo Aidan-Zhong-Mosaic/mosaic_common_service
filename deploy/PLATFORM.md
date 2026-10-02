@@ -132,19 +132,36 @@ any time.
 
 ### Phase 3 - Build, push, and configure each service
 
-For each of the three services, in any order (they don't depend on each
-other): build and push its image(s) to the ECR repos from Phase 1, then
-create its namespace and its Secrets/ConfigMaps. The exact commands differ
-per service (different images, different secrets) and live in that
+All three services share one namespace, **`mosaic-ai`** - at the infra
+team's request (they own this cluster). Create it once:
+
+```bash
+kubectl create namespace mosaic-ai
+```
+
+(Two earlier versions of this runbook went back and forth - one shared
+namespace, then three per-service namespaces reverted before anything was
+deployed, now back to one shared namespace per the infra team's final
+call. See "Why one shared namespace, not per-service" below for what to
+watch out for as a result of that choice, and why it's not just naming.)
+
+Then for each of the three services, in any order (they don't depend on
+each other): build and push its image(s) to the ECR repos from Phase 1,
+then create its Secrets/ConfigMaps in `mosaic-ai`. The exact commands
+differ per service (different images, different secrets) and live in that
 service's own README so they stay next to the chart they describe:
 
 - [mosaic_common_service/deploy/helm/README-deploy.md](helm/README-deploy.md)
 - [worldmonitor_aidan_mosaic/deploy/helm/README-deploy.md](../../worldmonitor_aidan_mosaic/deploy/helm/README-deploy.md)
 - [mosaic-ai-chat/deploy/helm/README-deploy.md](../../mosaic-ai-chat/deploy/helm/README-deploy.md)
 
-Each covers, in order: building the image(s), creating the namespace,
-creating the Secrets/ConfigMaps, and copying `values-prod.yaml.example` to
-a filled-in `values-prod.yaml`.
+Each covers, in order: building the image(s), creating the Secrets/
+ConfigMaps, and copying `values-prod.yaml.example` to a filled-in
+`values-prod.yaml`. Each chart's resources are prefixed by its own release
+name (`mosaic-common-service` / `worldmonitor` / `mosaic-ai-chat`), so
+sharing one namespace doesn't collide anything - verified before this was
+set up. Use `kubectl -n mosaic-ai get pods -l app.kubernetes.io/instance=<name>`
+to scope `kubectl` to just one service within it.
 
 ### Phase 4 - Deploy
 
@@ -163,7 +180,7 @@ one-time setup.
 For each service you want reachable from outside the cluster, set
 `ingress.enabled: true` in its `values-prod.yaml` and re-run
 `deploy-all.sh` (or that service alone). Find each ALB's address with
-`kubectl -n <namespace> get ingress`. Once confirmed working, point the
+`kubectl -n mosaic-ai get ingress`. Once confirmed working, point the
 real domains at the new ALB address(es) instead of the current EC2 hosts,
 and only then decommission the manual nginx configs on those EC2 boxes
 (`/etc/nginx/sites-enabled/mosaic`, `/etc/nginx/conf.d/worldmonitor.conf`,
@@ -173,11 +190,57 @@ cut over and you've confirmed the new path works end to end.
 ### Phase 6 - Verify
 
 ```bash
-kubectl get pods -A
+kubectl -n mosaic-ai get pods
 ```
+
+(Not `kubectl get pods -A` - this cluster runs a lot more than just our
+three services; see below. `-n mosaic-ai` scopes it to ours, though that
+now includes all three services mixed together - add
+`-l app.kubernetes.io/instance=<name>` to narrow to one.)
 
 Everything should be `Running`. Each service's own README has a more
 specific health-check (`curl .../health`, etc.).
+
+## A note on the `mosaic` namespace
+
+Before creating anything, `kubectl get pods -A` on this cluster turned up a
+namespace literally called `mosaic` - 83 days old, already running roughly
+150 pods (Airflow, Kafka, Trino, OpenSearch, a Keycloak login system,
+Jupyter notebooks under named users, and several LLM-adjacent services). It
+is **not** ours - that's a different, pre-existing platform that happens
+to share the "mosaic" name. Our services live in the separate `mosaic-ai`
+namespace instead. If you're new to this cluster, don't assume `mosaic` is
+where our services are - check `kubectl -n mosaic-ai get pods`, not
+`-n mosaic`.
+
+## Why one shared namespace, not per-service
+
+This runbook briefly used three separate namespaces
+(`mosaic-ai-common-service`, `mosaic-ai-worldmonitor`, `mosaic-ai-chat`)
+for exactly the reasons a shared namespace usually isn't ideal:
+
+- **Blast radius.** A bad ResourceQuota, NetworkPolicy, or RBAC change made
+  for one service can't touch another when they're in different
+  namespaces. In a shared namespace, it can.
+- **Different risk profiles.** mosaic-ai-chat handles SAML/SSO and user
+  data, worldmonitor is more public-facing, mosaic-common-service is meant
+  to become shared platform infrastructure other things call into.
+  Namespace-level isolation matches that naturally; a shared namespace
+  doesn't.
+- **The `mosaic` namespace itself is a cautionary example.** It grew to
+  ~150 unrelated pods over time precisely because it was the one shared
+  place things got added to. "Could be more services later" was the
+  original reasoning for a shared namespace here too - the same reasoning
+  that produced `mosaic`.
+
+The infra team, who own this cluster, asked for one shared `mosaic-ai`
+namespace instead, and that's final - reverted before anything was
+deployed into the per-service namespaces, no harm done. It's technically
+safe (each chart's resources are prefixed by its own release name, so
+nothing collides), and the tradeoffs above are still real - just accepted
+ones, not overlooked ones. Worth revisiting if the number of services
+sharing it grows a lot, or if one service's blast radius ever needs
+harder isolation from the others.
 
 ## Why this exists
 
@@ -263,17 +326,20 @@ above.
    (multi-component, one Deployment+Service pair per component sharing one
    chart), or `mosaic-ai-chat` (multi-component with PVCs and
    externally-managed databases).
-2. Add one line to the `SERVICES` array in `deploy/deploy-all.sh`.
+2. Add it to the `mosaic-ai` namespace in the `SERVICES` array entry you
+   add to `deploy/deploy-all.sh` - the same namespace every other service
+   uses (see "Why one shared namespace, not per-service" above).
 3. Add its own `deploy/helm/README-deploy.md` with that service's one-time
    setup.
 4. Create its ECR repo(s) (Phase 1 above).
 
 ## Conventions across charts
 
-- **One namespace per service** (`mosaic`, `worldmonitor`, `mosaic-chat`, ...)
-  rather than one shared namespace - keeps `kubectl get pods -n X` scoped to
-  one service, and RBAC/NetworkPolicy can be scoped per namespace later
-  without restructuring anything.
+- **One shared namespace, `mosaic-ai`, for all of our services** - the
+  infra team's call, not ours; see "Why one shared namespace, not
+  per-service" above for the tradeoffs that come with it. Use
+  `-l app.kubernetes.io/instance=<service>` to scope `kubectl` to one
+  service within it.
 - **Secrets/ConfigMaps holding real config are never created through Helm
   values in production.** Every chart supports an `existingSecret` (and
   where relevant `existingConfigMap`) value pointing at something you (or,
