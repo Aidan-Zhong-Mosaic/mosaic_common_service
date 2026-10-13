@@ -82,6 +82,10 @@ config:
   sharepointClientId: ""
   # true turns off write, create and delete, leaving read and list.
   sharepointReadOnly: false
+  # "download" edits Excel files by downloading, adding the row and uploading (works
+  # with Sites.Selected, may drop charts/images); "graph" uses Microsoft's Excel API
+  # (keeps everything, but needs a wider permission than Sites.Selected).
+  sharepointExcelMode: "download"
 
 # The SharePoint app registration's client secret, read from a pre-created Secret
 # (never put it in values). Create it with:

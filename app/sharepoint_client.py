@@ -25,6 +25,7 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 
 import httpx
 
+from app import excel_edit
 from app.config import Settings, get_settings
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
@@ -41,6 +42,9 @@ LIST_MAX_ITEMS = 5000
 RETRY_STATUSES = {429, 503, 504}
 MAX_RETRIES = 3
 MAX_RETRY_WAIT_SECONDS = 10.0
+
+# Download mode re-reads and retries when someone changes the workbook mid-append.
+EXCEL_APPEND_ATTEMPTS = 4
 
 # Characters SharePoint does not allow in a file or folder name.
 _FORBIDDEN_NAME_CHARS = set('"*:<>?\\|')
@@ -74,6 +78,10 @@ class NotFoundError(SharePointError):
 
 class ConflictError(SharePointError):
     status_code = 409
+
+
+class ConcurrentChangeError(ConflictError):
+    """The file changed between our read and our write (ETag precondition failed)."""
 
 
 class TooLargeError(SharePointError):
@@ -313,6 +321,12 @@ class SharePointClient:
 
         self._root_location = parse_root_url(settings.sharepoint_root_url)
         self._max_file_bytes = settings.sharepoint_max_file_bytes
+        self._excel_mode = settings.sharepoint_excel_mode.strip().lower()
+        if self._excel_mode not in ("download", "graph"):
+            raise SharePointConfigError(
+                f"GATEWAY_SHAREPOINT_EXCEL_MODE is '{settings.sharepoint_excel_mode}'; use 'download' or 'graph'."
+            )
+        self._file_locks: dict[str, asyncio.Lock] = {}
         self._token = _TokenProvider(
             tenant_id=settings.sharepoint_tenant_id,
             client_id=settings.sharepoint_client_id,
@@ -368,7 +382,7 @@ class SharePointClient:
         if status == 423:
             raise ConflictError(f"{what} is locked (checked out, or being saved by someone). Try again shortly.")
         if status == 412:
-            raise ConflictError(f"{what} was changed by someone else while this request ran. Try again.")
+            raise ConcurrentChangeError(f"{what} was changed by someone else while this request ran. Try again.")
         if status == 413:
             raise TooLargeError(f"{what}: SharePoint refused the size of this file ({detail}).")
         if status == 400:
@@ -706,12 +720,17 @@ class SharePointClient:
     ) -> dict[str, Any]:
         """Adds one row to the end of an Excel table, or below the last used row of a sheet.
 
-        Uses Graph's Excel API, so the workbook is edited in place and anything else in
-        it (charts, pivots, formatting) is left alone, and someone with the file open
-        sees the row appear. A table is the safe target: Excel adds rows to it one at a
-        time, so simultaneous callers never overwrite each other. Without a table the
-        row goes below the last used row, which two callers at the same moment could
-        both pick.
+        Two ways, chosen by GATEWAY_SHAREPOINT_EXCEL_MODE:
+          "graph": Graph's Excel API edits the workbook in place, so charts, pivots and
+              formatting are untouched and someone with the file open sees the row
+              appear. Table rows are added one at a time by Excel, so simultaneous
+              callers never overwrite each other. Needs a permission wider than
+              Sites.Selected.
+          "download": downloads the file, adds the row here, uploads it again with an
+              ETag precondition (see excel_edit.py for what that does to the file).
+              Works with only file access.
+        Without a table the row goes below the last used row, which two callers at the
+        same moment could both pick in "graph" mode.
         """
         if (values is None) == (row is None):
             raise BadRequestError("Send exactly one of 'values' (cells in order) or 'row' (cells by column name).")
@@ -720,7 +739,13 @@ class SharePointClient:
         if table and sheet:
             raise BadRequestError("Send 'table' or 'sheet', not both: a table already belongs to one sheet.")
 
+        if not rel or not rel[-1].lower().endswith(".xlsx"):
+            raise NotExcelError(f"'{'/'.join(rel)}' is not an Excel workbook. Only .xlsx files are supported.")
         await self._require_workbook(rel)
+        if self._excel_mode == "download":
+            return await self._append_row_by_download(
+                rel, values=values, row=row, table=table, sheet=sheet, allow_formulas=allow_formulas
+            )
         drive_id, root = await self._resolve()
         name = "/".join(rel)
 
@@ -730,6 +755,55 @@ class SharePointClient:
         if table:
             return await self._append_table_row(name, workbook_url, table, values, row, allow_formulas)
         return await self._append_sheet_row(name, workbook_url, sheet, values or [], allow_formulas)
+
+    async def _append_row_by_download(
+        self,
+        rel: list[str],
+        *,
+        values: list[Any] | None,
+        row: dict[str, Any] | None,
+        table: str | None,
+        sheet: str | None,
+        allow_formulas: bool,
+    ) -> dict[str, Any]:
+        name = "/".join(rel)
+        errors = {
+            "bad_request": BadRequestError,
+            "not_found": NotFoundError,
+            "conflict": ConflictError,
+            "not_excel": NotExcelError,
+        }
+        # One append at a time per file inside this process; the ETag check below is
+        # what protects against other processes and against people editing the file.
+        async with self._file_locks.setdefault(name, asyncio.Lock()):
+            for attempt in range(EXCEL_APPEND_ATTEMPTS):
+                item = await self._get_item(rel)
+                data = await self._download(item, rel)
+                try:
+                    new_data, result, notes = await asyncio.to_thread(
+                        excel_edit.append_row,
+                        data,
+                        table=table,
+                        sheet=sheet,
+                        values=values,
+                        row=row,
+                        prepare=lambda cells: prepare_cells(cells, allow_formulas=allow_formulas),
+                    )
+                except excel_edit.ExcelEditError as exc:
+                    raise errors[exc.kind](f"'{name}': {exc}") from exc
+                if len(new_data) > self._max_file_bytes:
+                    raise TooLargeError(f"'{name}' would exceed the {self._max_file_bytes} byte limit with the new row.")
+                try:
+                    await self._upload(rel, new_data, conflict="replace", if_match=item.get("eTag"))
+                except ConcurrentChangeError:
+                    # Someone saved the file after we read it. Read it again and redo the add.
+                    if attempt == EXCEL_APPEND_ATTEMPTS - 1:
+                        raise ConflictError(f"'{name}' kept changing while the row was being added. Try again.") from None
+                    await asyncio.sleep(0.2 * (attempt + 1))
+                    continue
+                result["notes"] = notes
+                return result
+        raise ConflictError(f"Could not add the row to '{name}'.")  # pragma: no cover
 
     async def _append_table_row(
         self,

@@ -100,6 +100,10 @@ class SharePointExcelRowResponse(BaseModel):
         description="1-based: the row's position among the table's data rows (table mode), or the Excel row number (sheet mode).",
     )
     address: str | None = Field(None, description="Sheet mode only: the cells written, e.g. 'A11:C11'.")
+    notes: list[str] = Field(
+        default_factory=list,
+        description="Download mode only: anything the workbook lost or did not get when it was re-saved (for example features that could not be kept).",
+    )
 
 
 class SharePointCreateDirectoryResponse(BaseModel):

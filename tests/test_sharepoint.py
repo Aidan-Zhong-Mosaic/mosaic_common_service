@@ -34,6 +34,7 @@ def make_settings(**overrides) -> Settings:
         sharepoint_tenant_id="tenant-1",
         sharepoint_client_id="client-1",
         sharepoint_client_secret="secret-1",
+        sharepoint_excel_mode="graph",  # these tests exercise the Graph Excel API; tests/test_excel_download.py covers the other mode
     )
     values.update(overrides)
     return Settings(**values)
@@ -739,7 +740,7 @@ def test_table_append_by_values(graph, api):
     graph.add_workbook(BOOK, tables={"Orders": ["Name", "Qty", "Paid"]})
     resp = append(api, table="Orders", values=["Ada", 3, True])
     assert resp.status_code == 201
-    assert resp.json() == {"path": "orders.xlsx", "mode": "table", "table": "Orders", "sheet": None, "row_number": 1, "address": None}
+    assert resp.json() == {"path": "orders.xlsx", "mode": "table", "table": "Orders", "sheet": None, "row_number": 1, "address": None, "notes": []}
     assert append(api, table="Orders", values=["Bob", 4.5, False]).json()["row_number"] == 2
     assert graph.items[BOOK]["tables"]["Orders"]["rows"] == [["Ada", 3, True], ["Bob", 4.5, False]]
 
@@ -815,7 +816,7 @@ def test_sheet_append_to_empty_sheet_then_below_the_data(graph, api):
     graph.add_workbook(BOOK, sheets=["Data"])
     first = append(api, values=["x", 1, 2])
     assert first.status_code == 201
-    assert first.json() == {"path": "orders.xlsx", "mode": "sheet", "table": None, "sheet": "Data", "row_number": 1, "address": "A1:C1"}
+    assert first.json() == {"path": "orders.xlsx", "mode": "sheet", "table": None, "sheet": "Data", "row_number": 1, "address": "A1:C1", "notes": []}
     assert append(api, values=["y", 3, 4]).json()["address"] == "A2:C2"
     assert graph.sheet_row(BOOK, "Data", 1) == ["x", 1, 2] and graph.sheet_row(BOOK, "Data", 2) == ["y", 3, 4]
 

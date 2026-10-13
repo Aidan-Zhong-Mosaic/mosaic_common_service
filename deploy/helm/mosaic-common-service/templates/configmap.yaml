@@ -17,3 +17,4 @@ data:
   GATEWAY_SHAREPOINT_TENANT_ID: {{ .Values.config.sharepointTenantId | quote }}
   GATEWAY_SHAREPOINT_CLIENT_ID: {{ .Values.config.sharepointClientId | quote }}
   GATEWAY_SHAREPOINT_READ_ONLY: {{ .Values.config.sharepointReadOnly | quote }}
+  GATEWAY_SHAREPOINT_EXCEL_MODE: {{ .Values.config.sharepointExcelMode | quote }}

@@ -32,6 +32,13 @@ class Settings(BaseSettings):
     # Secret: set via the environment (a Kubernetes Secret in the cluster), never
     # in a committed file.
     sharepoint_client_secret: str = ""
+    # How /sharepoint/append_excel_row edits the workbook:
+    #   "download": download the .xlsx, add the row here, upload it again. Needs only
+    #               file access, so it works with a Sites.Selected grant. Re-saving can
+    #               drop charts, images and other advanced features.
+    #   "graph":    Microsoft's Excel API edits the file in place and keeps everything,
+    #               but it refuses apps that only hold Sites.Selected.
+    sharepoint_excel_mode: str = "download"
     # Turns off every endpoint that changes SharePoint (write, create, delete).
     sharepoint_read_only: bool = False
     sharepoint_max_file_bytes: int = 50 * 1024 * 1024

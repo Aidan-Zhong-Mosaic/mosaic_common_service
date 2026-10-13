@@ -115,6 +115,7 @@ values, see `deploy/helm/mosaic-common-service/values.yaml`):
 | `GATEWAY_SHAREPOINT_TENANT_ID`, `GATEWAY_SHAREPOINT_CLIENT_ID` | The Entra ID app registration the service signs in as. |
 | `GATEWAY_SHAREPOINT_CLIENT_SECRET` | Its secret. Keep out of git; in Kubernetes it comes from a Secret (`sharepoint.existingSecret`). |
 | `GATEWAY_SHAREPOINT_READ_ONLY` | `true` disables write, create and delete (default `false`). |
+| `GATEWAY_SHAREPOINT_EXCEL_MODE` | `download` (default) or `graph`, see [Excel rows](#excel-rows). |
 | `GATEWAY_SHAREPOINT_MAX_FILE_BYTES` | Largest file read or written (default 50 MiB). |
 
 **Microsoft side:** the app registration needs a Graph *application* permission. The
@@ -131,9 +132,23 @@ ETag so a concurrent change fails with 409 instead of being overwritten. Files o
 
 ### Excel rows
 
-`POST /sharepoint/append_excel_row` edits the workbook in place through Graph's Excel
-API, so charts, pivots and formatting are untouched and someone with the file open sees
-the row appear. It returns **201** with the row's position.
+`POST /sharepoint/append_excel_row` adds one row to a workbook. It returns **201** with
+the row's position. There are two ways it can edit the file, set by
+`GATEWAY_SHAREPOINT_EXCEL_MODE`:
+
+| Mode | How | Needs | Trade-off |
+|---|---|---|---|
+| `download` (default) | Downloads the `.xlsx`, adds the row in this service, uploads it again | Only file access (works with a `Sites.Selected` grant) | Re-saving can **drop charts, images, pivots, macros and some advanced features**. Anything dropped is returned in `notes`. Every upload is a new SharePoint version, so the previous one can be restored. |
+| `graph` | Microsoft's Excel API edits the workbook in place | A permission wider than `Sites.Selected` (the Excel service refuses apps that only hold it: `Could not obtain a WAC access token`) | Keeps everything; someone with the file open sees the row appear. |
+
+In `download` mode: text stays text (`"2026-10-13"` is not turned into a date); a blank
+row at the end of a table is filled instead of adding a new one; rows under a table that
+already hold data, and tables with a totals row, are refused rather than overwritten;
+calculated columns and data-validation ranges are not extended to the new row (a note
+says so). Two submissions at the same moment are handled by an ETag check: the loser
+re-reads the file and adds its row again, up to four times, then gets a 409. SharePoint
+is expected to enforce that check; if forms can arrive in bursts, watch for lost rows
+the first time you rely on it.
 
 ```
 # Recommended: add to an Excel table (Insert > Table). Cells by column name...
