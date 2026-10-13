@@ -1,0 +1,1472 @@
+<!doctype html>
+<title>The MosAIc Harbor</title>
+<style>
+  /*
+    Layout concept: a nautical chart / captain's log. A fixed masthead with
+    two log-tabs ("The Big Picture" and "What We Actually Ran"), each tab a
+    long scrollable page styled like chart paper with navy ink, an AWS-orange
+    accent for the AWS-specific pieces, and a harbor-green for "alive" status.
+  */
+  :root{
+    --bg:#EEF2F7; --bg-panel:#E2E9F1; --bg-card:#FFFFFF;
+    --fg:#0B2545; --fg-muted:#3B587A; --fg-faint:#6C84A6;
+    --accent:#2C5FE0;   /* kubernetes blue */
+    --accent-2:#C96B00; /* aws orange, darkened for light-bg contrast */
+    --ok:#1E8E5A; --bad:#B3261E;
+    --line:#C7D2E0;
+    --code-bg:#0B2545; --code-fg:#DCE6F5;
+    --shadow: 0 1px 2px rgba(11,37,69,.06), 0 8px 24px rgba(11,37,69,.06);
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0A1628; --bg-panel:#101F38; --bg-card:#132A4A;
+      --fg:#E7EEF7; --fg-muted:#9FB3CC; --fg-faint:#6E88AC;
+      --accent:#6E97F2; --accent-2:#FFB238; --ok:#3DDC97; --bad:#FF8A80;
+      --line:#24344E;
+      --code-bg:#060F1F; --code-fg:#D6E2F5;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0A1628; --bg-panel:#101F38; --bg-card:#132A4A;
+    --fg:#E7EEF7; --fg-muted:#9FB3CC; --fg-faint:#6E88AC;
+    --accent:#6E97F2; --accent-2:#FFB238; --ok:#3DDC97; --bad:#FF8A80;
+    --line:#24344E;
+    --code-bg:#060F1F; --code-fg:#D6E2F5;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px rgba(0,0,0,.35);
+    color-scheme: dark;
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Source+Sans+3:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--bg); color:var(--fg);
+    font-family:"Source Sans 3",system-ui,sans-serif;
+    font-size:16px; line-height:1.55;
+    padding-inline:0;
+  }
+  h1,h2,h3{font-family:"Fraunces",Georgia,serif; text-wrap:balance; font-weight:600; color:var(--fg)}
+  code, .mono{font-family:"IBM Plex Mono",ui-monospace,monospace}
+
+  a{color:var(--accent)}
+
+  /* ---------- masthead ---------- */
+  header.masthead{
+    position:sticky; top:env(safe-area-inset-top,0px); z-index:20;
+    background:var(--bg); border-bottom:1px solid var(--line);
+    padding:14px 20px calc(14px + env(safe-area-inset-top,0px)) 20px;
+    padding-top:calc(14px + env(safe-area-inset-top,0px));
+  }
+  .masthead-inner{max-width:920px; margin:0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:14px; justify-content:space-between}
+  .brand{display:flex; align-items:center; gap:10px}
+  .brand h1{font-size:1.15rem; margin:0; letter-spacing:.2px}
+  .brand .wheel{width:30px;height:30px;flex:none}
+  .tabs{display:flex; gap:6px; background:var(--bg-panel); padding:4px; border-radius:999px; border:1px solid var(--line)}
+  .tab-btn{
+    font-family:"IBM Plex Mono",monospace; font-size:.78rem; letter-spacing:.03em;
+    padding:8px 14px; border-radius:999px; border:none; background:transparent; color:var(--fg-muted);
+    cursor:pointer;
+  }
+  .tab-btn[aria-selected="true"]{background:var(--accent); color:#fff}
+  .tab-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+  main{max-width:920px; margin:0 auto; padding:28px 20px 80px}
+
+  /* ---------- big picture ---------- */
+  .lede{color:var(--fg-muted); font-size:1.05rem; max-width:62ch}
+  .eyebrow{
+    font-family:"IBM Plex Mono",monospace; font-size:.75rem; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--accent); margin:0 0 6px;
+  }
+
+  .diagram{
+    margin:28px 0 36px; background:var(--bg-card); border:1px solid var(--line); border-radius:14px;
+    padding:18px; box-shadow:var(--shadow); overflow-x:auto;
+  }
+  .diagram svg{display:block; min-width:640px; width:100%; height:auto}
+
+  .chapter{
+    display:grid; grid-template-columns:56px 1fr; gap:16px;
+    padding:22px 0; border-top:1px solid var(--line);
+  }
+  .chapter:first-of-type{border-top:none}
+  .chapter .icon{
+    width:56px;height:56px; border-radius:12px; background:var(--bg-panel); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; flex:none;
+  }
+  .chapter .icon svg{width:30px;height:30px}
+  .chapter h2{font-size:1.2rem; margin:2px 0 6px}
+  .chapter p{margin:0 0 10px; color:var(--fg)}
+  .chapter p.note{color:var(--fg-muted); font-size:.92rem}
+  .chapter .pair{display:flex; flex-wrap:wrap; gap:8px; margin-top:8px}
+  .pill{
+    font-family:"IBM Plex Mono",monospace; font-size:.75rem; padding:4px 10px; border-radius:999px;
+    background:var(--bg-panel); border:1px solid var(--line); color:var(--fg-muted);
+  }
+  .pill.aws{border-color:var(--accent-2); color:var(--accent-2)}
+  .pill.ok{border-color:var(--ok); color:var(--ok)}
+
+  .callout{
+    background:var(--bg-panel); border:1px solid var(--line); border-left:3px solid var(--accent-2);
+    border-radius:10px; padding:14px 16px; margin:14px 0; font-size:.95rem; color:var(--fg-muted);
+  }
+  .callout strong{color:var(--fg)}
+
+  /* ---------- command log ---------- */
+  .phase{
+    background:var(--bg-card); border:1px solid var(--line); border-radius:14px;
+    padding:20px 20px 8px; margin-bottom:22px; box-shadow:var(--shadow);
+  }
+  .phase-head{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap; margin-bottom:4px}
+  .phase-num{
+    font-family:"IBM Plex Mono",monospace; color:var(--accent); font-size:.85rem; font-weight:600;
+  }
+  .phase h3{margin:0; font-size:1.05rem}
+  .phase .what{color:var(--fg-muted); font-size:.92rem; margin:4px 0 14px; max-width:60ch}
+
+  .cmd{position:relative; margin:0 0 14px}
+  .cmd .label{font-family:"IBM Plex Mono",monospace; font-size:.72rem; color:var(--fg-faint); margin:0 0 5px; letter-spacing:.02em}
+  pre{
+    background:var(--code-bg); color:var(--code-fg); border-radius:10px; padding:13px 44px 13px 15px;
+    overflow-x:auto; font-size:.83rem; line-height:1.5; margin:0;
+  }
+  pre code{font-family:"IBM Plex Mono",monospace; white-space:pre}
+  .copy-btn{
+    position:absolute; top:8px; right:8px; background:rgba(255,255,255,.08); color:var(--code-fg);
+    border:1px solid rgba(255,255,255,.18); border-radius:6px; font-size:.68rem; font-family:"IBM Plex Mono",monospace;
+    padding:4px 8px; cursor:pointer;
+  }
+  .copy-btn:hover{background:rgba(255,255,255,.16)}
+
+  .fixed-note{
+    font-size:.85rem; color:var(--fg-muted); border-top:1px dashed var(--line); padding:10px 0 14px; margin-top:4px;
+  }
+  .fixed-note .ok-dot{color:var(--ok); font-weight:700}
+
+  /* ---------- before/after ---------- */
+  .ba-pair{display:flex; gap:16px; margin:22px 0 30px; flex-wrap:wrap}
+  .ba-card{
+    flex:1 1 260px; background:var(--bg-card); border:1px solid var(--line); border-radius:14px;
+    padding:20px; box-shadow:var(--shadow);
+  }
+  .ba-card.old{border-top:3px solid var(--fg-faint)}
+  .ba-card.new{border-top:3px solid var(--ok)}
+  .ba-card .kicker{font-family:"IBM Plex Mono",monospace; font-size:.72rem; letter-spacing:.06em; text-transform:uppercase; color:var(--fg-faint)}
+  .ba-card.new .kicker{color:var(--ok)}
+  .ba-card h3{margin:4px 0 8px; font-size:1.05rem}
+  .ba-card p{margin:0; color:var(--fg-muted); font-size:.92rem}
+
+  .map-wrap{overflow-x:auto; margin:18px 0 30px; border:1px solid var(--line); border-radius:14px; background:var(--bg-card); box-shadow:var(--shadow)}
+  table.map-table{width:100%; border-collapse:collapse; min-width:600px}
+  .map-table th{
+    font-family:"IBM Plex Mono",monospace; font-size:.68rem; text-transform:uppercase; letter-spacing:.06em;
+    color:var(--fg-faint); text-align:left; padding:12px 14px; border-bottom:1px solid var(--line);
+  }
+  .map-table td{padding:12px 14px; border-bottom:1px solid var(--line); font-size:.88rem; vertical-align:top}
+  .map-table tr:last-child td{border-bottom:none}
+  .map-table td.old{color:var(--fg-muted)}
+  .map-table td.new strong{color:var(--accent)}
+  .map-table td.why{color:var(--fg-muted); font-size:.85rem}
+  .map-table .arrow{color:var(--fg-faint); padding:0 4px}
+  .map-table tr.flagged td.new strong{color:var(--accent-2)}
+
+  .prosline{display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--line)}
+  .prosline:first-of-type{border-top:none}
+  .prosline .mark{color:var(--ok); font-weight:700; flex:none; width:20px}
+  .prosline p{margin:0; font-size:.94rem}
+
+  footer.page{max-width:920px; margin:0 auto; padding:10px 20px 60px; color:var(--fg-faint); font-size:.85rem}
+
+  /* ---------- technical overview ---------- */
+  .t-box{fill:var(--bg-panel); stroke:var(--line); stroke-width:1.5}
+  .t-box.aws{stroke:var(--accent-2)}
+  .t-box.k8s{stroke:var(--accent); fill:none}
+  .t-inner{fill:var(--bg-card); stroke:var(--line); stroke-width:1.2}
+  .t-lbl{font-family:'IBM Plex Mono',monospace; font-size:11px; fill:var(--fg); text-anchor:middle}
+  .t-h{font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600; fill:var(--fg)}
+  .t-txt{font-family:'Source Sans 3',sans-serif; font-size:10.5px; fill:var(--fg-muted)}
+  .t-sub{font-family:'Source Sans 3',sans-serif; font-size:10px; fill:var(--fg-muted); text-anchor:middle}
+  .t-cap{font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.08em; fill:var(--fg-faint)}
+  .t-flow{stroke:var(--fg-faint); stroke-width:1.5; fill:none; marker-end:url(#t-arrow)}
+  .t-dash{stroke-dasharray:4 3}
+  .fig-cap{color:var(--fg-muted); font-size:.88rem; margin:-18px 0 0; max-width:78ch}
+  .steps{margin:0 0 6px; padding-left:1.3rem}
+  .steps li{margin:8px 0; padding-left:4px; max-width:78ch}
+
+  /* ---------- maintenance workbook ---------- */
+  .wb-flow{display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:20px 0 6px}
+  .wb-flow .pill{background:var(--bg-card); color:var(--fg)}
+  .wb-flow .sep{color:var(--fg-faint)}
+  .toc{display:flex; flex-wrap:wrap; gap:8px; margin:18px 0 8px}
+  .toc a{
+    font-family:"IBM Plex Mono",monospace; font-size:.74rem; text-decoration:none; padding:5px 11px;
+    border-radius:999px; border:1px solid var(--line); color:var(--fg-muted); background:var(--bg-card);
+  }
+  .toc a:hover{border-color:var(--accent); color:var(--accent)}
+  .toc a:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .wb-sec{scroll-margin-top:96px; margin-top:46px}
+  .wb-sec > h2{font-size:1.3rem; margin:0 0 4px}
+  .wb-sec > .sec-sub{color:var(--fg-muted); margin:0 0 16px; max-width:66ch; font-size:.95rem}
+  .sec-tag{font-family:"IBM Plex Mono",monospace; font-size:.72rem; letter-spacing:.07em; text-transform:uppercase; color:var(--accent); margin:0 0 4px}
+  .wb-sec .phase{margin-bottom:18px}
+  .wb-sec h3.sub{font-size:1rem; margin:22px 0 8px}
+  .map-table code{overflow-wrap:anywhere; font-size:.8rem}
+  .map-table td.sym{font-weight:600; color:var(--fg)}
+  .map-table td p{margin:0 0 6px}
+  .map-table td p:last-child{margin-bottom:0}
+  .risk{
+    display:inline-block; font-family:"IBM Plex Mono",monospace; font-size:.68rem; padding:2px 8px;
+    border-radius:999px; border:1px solid var(--line); white-space:nowrap; color:var(--fg-muted);
+  }
+  .risk.low{border-color:var(--ok); color:var(--ok)}
+  .risk.mid{border-color:var(--accent-2); color:var(--accent-2)}
+  .risk.high{border-color:var(--bad); color:var(--bad)}
+  .callout.bad{border-left-color:var(--bad)}
+  .callout.ok{border-left-color:var(--ok)}
+  .callout p{margin:0 0 8px}
+  .callout p:last-child{margin-bottom:0}
+  .checklist{list-style:none; margin:0; padding:0 16px; background:var(--bg-card); border:1px solid var(--line); border-radius:14px; box-shadow:var(--shadow)}
+  .checklist li + li{border-top:1px solid var(--line)}
+  .checklist label{display:flex; gap:12px; align-items:flex-start; padding:12px 0; cursor:pointer; font-size:.94rem}
+  .checklist input{margin-top:4px; width:16px; height:16px; accent-color:var(--accent); flex:none}
+  .checklist input:checked + span{color:var(--fg-faint)}
+  .checklist input:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .checklist code{font-size:.8rem; overflow-wrap:anywhere}
+  .wb-tools{display:flex; justify-content:flex-end; margin:8px 0 0}
+  .wb-btn{
+    font-family:"IBM Plex Mono",monospace; font-size:.72rem; padding:5px 12px; border-radius:999px;
+    border:1px solid var(--line); background:var(--bg-card); color:var(--fg-muted); cursor:pointer;
+  }
+  .wb-btn:hover{border-color:var(--accent); color:var(--accent)}
+  .wb-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+  .log-table td.blank{color:var(--fg-faint)}
+
+  @media (max-width:640px){
+    .chapter{grid-template-columns:44px 1fr}
+    .chapter .icon{width:44px;height:44px}
+    .chapter .icon svg{width:24px;height:24px}
+    .tabs{width:100%; justify-content:space-between}
+    .tab-btn{flex:1; text-align:center}
+  }
+</style>
+
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="brand">
+      <svg class="wheel" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <circle cx="24" cy="24" r="16" stroke="var(--accent)" stroke-width="2.5"/>
+        <circle cx="24" cy="24" r="4.5" fill="var(--accent)"/>
+        <g stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round">
+          <path d="M24 4v10"/><path d="M24 34v10"/>
+          <path d="M4 24h10"/><path d="M34 24h10"/>
+          <path d="M9.8 9.8l7 7"/><path d="M31.2 31.2l7 7"/>
+          <path d="M38.2 9.8l-7 7"/><path d="M16.8 31.2l-7 7"/>
+        </g>
+      </svg>
+      <h1>The MosAIc Harbor</h1>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Sections">
+      <button class="tab-btn" id="tab-story" role="tab" aria-selected="true" aria-controls="panel-story">the big picture</button>
+      <button class="tab-btn" id="tab-tech" role="tab" aria-selected="false" aria-controls="panel-tech">technical overview</button>
+      <button class="tab-btn" id="tab-before" role="tab" aria-selected="false" aria-controls="panel-before">before &rarr; after</button>
+      <button class="tab-btn" id="tab-kubus" role="tab" aria-selected="false" aria-controls="panel-kubus">day 2 ops</button>
+      <button class="tab-btn" id="tab-workbook" role="tab" aria-selected="false" aria-controls="panel-workbook">workbook</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ================= PANEL 1: THE STORY ================= -->
+  <section id="panel-story" role="tabpanel" aria-labelledby="tab-story">
+    <p class="eyebrow">How three apps got a home in the cloud</p>
+    <p class="lede">Three apps needed somewhere that runs them day and night, restarts them if they crash, and never mixes up their stuff with anyone else's. Here's everything we used to build that, explained the simple way.</p>
+
+    <div class="diagram" role="img" aria-label="Diagram: code becomes a Docker image, the image is pushed to ECR, a Helm chart describes how to run it, Kubernetes on EKS schedules it into pods inside the mosaic-ai namespace, a Service gives it a stable address, and a shared front gate run by the platform team routes internet traffic to an app.">
+      <svg viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M0 0L10 5L0 10z" fill="var(--fg-faint)"/>
+          </marker>
+        </defs>
+        <style>
+          .box{fill:var(--bg-panel); stroke:var(--line); stroke-width:1.5; rx:10}
+          .box.aws{stroke:var(--accent-2)}
+          .box.k8s{stroke:var(--accent)}
+          .lbl{font-family:'IBM Plex Mono',monospace; font-size:11px; fill:var(--fg); text-anchor:middle}
+          .sub{font-family:'Source Sans 3',sans-serif; font-size:10px; fill:var(--fg-muted); text-anchor:middle}
+          .flow{stroke:var(--fg-faint); stroke-width:1.5; fill:none; marker-end:url(#arrow)}
+        </style>
+
+        <rect class="box" x="10" y="90" width="110" height="60" rx="10"/>
+        <text class="lbl" x="65" y="114">your code</text>
+        <text class="sub" x="65" y="130">3 apps</text>
+
+        <rect class="box" x="150" y="90" width="120" height="60" rx="10"/>
+        <text class="lbl" x="210" y="114">docker build</text>
+        <text class="sub" x="210" y="130">the lunchbox</text>
+
+        <rect class="box aws" x="300" y="90" width="120" height="60" rx="10"/>
+        <text class="lbl" x="360" y="114">ECR</text>
+        <text class="sub" x="360" y="130">AWS's shelf</text>
+
+        <rect class="box" x="450" y="20" width="120" height="60" rx="10"/>
+        <text class="lbl" x="510" y="44">Helm chart</text>
+        <text class="sub" x="510" y="60">the recipe</text>
+
+        <rect class="box k8s" x="450" y="100" width="420" height="140" rx="12"/>
+        <text class="lbl" x="660" y="122" style="font-size:12px">EKS cluster &middot; namespace: mosaic-ai</text>
+
+        <rect class="box" x="470" y="140" width="110" height="80" rx="8"/>
+        <text class="lbl" x="525" y="170" style="font-size:10px">common-</text>
+        <text class="lbl" x="525" y="184" style="font-size:10px">service</text>
+        <text class="sub" x="525" y="204" style="fill:var(--ok)">&#9679;&#9679; pods</text>
+
+        <rect class="box" x="600" y="140" width="110" height="80" rx="8"/>
+        <text class="lbl" x="655" y="170" style="font-size:10px">world-</text>
+        <text class="lbl" x="655" y="184" style="font-size:10px">monitor</text>
+        <text class="sub" x="655" y="204" style="fill:var(--ok)">&#9679;&#9679;&#9679;&#9679;&#9679; pods</text>
+
+        <rect class="box" x="730" y="140" width="120" height="80" rx="8"/>
+        <text class="lbl" x="790" y="170" style="font-size:10px">mosaic-</text>
+        <text class="lbl" x="790" y="184" style="font-size:10px">ai-chat</text>
+        <text class="sub" x="790" y="204" style="fill:var(--ok)">&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;&#9679; pods</text>
+
+        <path class="flow" d="M120 120 H150"/>
+        <path class="flow" d="M270 120 H300"/>
+        <path class="flow" d="M420 120 C 440 120, 440 60, 450 50"/>
+        <path class="flow" d="M420 120 H450"/>
+
+        <rect class="box" x="140" y="200" width="230" height="40" rx="8" style="stroke-dasharray:4 3"/>
+        <text class="sub" x="255" y="224">Service = a signpost that always finds the pods</text>
+        <path class="flow" d="M450 200 C 400 200, 400 220, 370 220" style="stroke-dasharray:3 3"/>
+
+        <rect class="box aws" x="140" y="10" width="230" height="44" rx="8" style="stroke-dasharray:4 3"/>
+        <text class="sub" x="255" y="30">Front gate (platform team's shared ALB)</text>
+        <text class="sub" x="255" y="43" style="font-size:9px">&rarr; internet, one route per app</text>
+        <path class="flow" d="M450 32 H370" style="stroke-dasharray:3 3"/>
+      </svg>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 9l9-5 9 5-9 5-9-5Z" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><path d="M3 9v7l9 5 9-5V9" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><path d="M12 14v6" stroke="var(--accent)" stroke-width="1.6"/></svg>
+      </div>
+      <div>
+        <h2>Docker &mdash; the magic lunchbox</h2>
+        <p>Code by itself isn't enough to run &mdash; it needs the right tools around it, like a recipe needing the right pans. <strong>Docker</strong> packs an app plus everything it needs into one sealed box called an <strong>image</strong>. Open that box on any computer, anywhere, and it works exactly the same way every time. (That's why Docker's mascot is a whale carrying containers on its back.)</p>
+        <div class="pair">
+          <span class="pill">docker build = pack the lunchbox</span>
+          <span class="pill">docker run = open it</span>
+          <span class="pill">an opened box = a "container"</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="1.5" stroke="var(--accent-2)" stroke-width="1.6"/><path d="M3 9h18M3 14h18" stroke="var(--accent-2)" stroke-width="1.4"/><path d="M8 4v16M14 4v16" stroke="var(--accent-2)" stroke-width="1.2" opacity=".5"/></svg>
+      </div>
+      <div>
+        <h2>ECR &mdash; Amazon's warehouse shelf</h2>
+        <p>Once a lunchbox is packed, it needs somewhere everyone can find a copy later. Amazon runs a giant warehouse called <strong>ECR</strong> (Elastic Container Registry). We put our lunchbox recipes on its shelves &mdash; one shelf per app &mdash; so that any computer in Amazon's harbor can grab one whenever it needs to.</p>
+        <div class="pair"><span class="pill aws">ECR = the shelf</span><span class="pill">docker push = put a copy on the shelf</span></div>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="8" stroke="var(--accent)" stroke-width="1.6"/><circle cx="12" cy="12" r="2" fill="var(--accent)"/><path d="M12 4v4M12 16v4M4 12h4M16 12h4M6.3 6.3l2.8 2.8M14.9 14.9l2.8 2.8M17.7 6.3l-2.8 2.8M9.1 14.9l-2.8 2.8" stroke="var(--accent)" stroke-width="1.6" stroke-linecap="round"/></svg>
+      </div>
+      <div>
+        <h2>Kubernetes &mdash; the harbor master</h2>
+        <p>Someone still has to go get those lunchboxes, put them on ships, keep watch, and make a fresh one the moment any falls overboard. That's <strong>Kubernetes</strong>' whole job &mdash; its name literally means "helmsman," the person who steers a ship, which is why its badge is a ship's wheel.</p>
+        <div class="pair">
+          <span class="pill">Node = one real ship (computer)</span>
+          <span class="pill">Pod = a small crate holding one opened lunchbox</span>
+          <span class="pill">Deployment = "always keep N crates afloat somewhere"</span>
+        </div>
+        <p class="note" style="margin-top:10px">If a ship needs maintenance, the harbor master quietly moves its crates to another ship. We never have to watch for that ourselves.</p>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7l8-4Z" stroke="var(--accent-2)" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      </div>
+      <div>
+        <h2>EKS &mdash; a ready-made harbor, rented</h2>
+        <p>We didn't build a harbor from scratch. Amazon rents us a whole one, already built, with ships and a harbor master on staff &mdash; that's <strong>EKS</strong> (Elastic Kubernetes Service). We just show up with cargo and orders.</p>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="8" height="14" rx="1.2" stroke="var(--accent)" stroke-width="1.6"/><rect x="13" y="5" width="8" height="14" rx="1.2" stroke="var(--accent)" stroke-width="1.6"/></svg>
+      </div>
+      <div>
+        <h2>Namespaces &mdash; our own labeled dock</h2>
+        <p>The harbor is shared. Another team already runs a large operation on it, under a dock called "mosaic," and it has nothing to do with our apps. So our apps live in their own clearly labeled zones: <strong>mosaic-ai</strong> for the real thing, and <strong>mosaic-ai-nonprod</strong> for a test copy of the chat app. Each is kept apart from everyone else's crates.</p>
+        <div class="callout"><strong>Habit to keep:</strong> because the harbor is shared, every command names its dock (<code>-n mosaic-ai</code>). Never rely on a default, and never change anything in a namespace that is not ours.</div>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 20V10l8-6 8 6v10" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke="var(--accent)" stroke-width="1.6"/><path d="M14 13h4v4" stroke="var(--accent)" stroke-width="1.4"/></svg>
+      </div>
+      <div>
+        <h2>Services &mdash; a signpost that never loses track</h2>
+        <p>Crates move around the harbor sometimes. So how does one crate find another? Every app gets a <strong>Service</strong> &mdash; a signpost with one fixed name that always points to wherever that app's crates currently are, even after they move.</p>
+        <p class="note">worldmonitor's app talks to its redis-rest crate by name, not by chasing it around the docks.</p>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="8" width="16" height="12" rx="1.5" stroke="var(--accent)" stroke-width="1.6"/><path d="M8 8V6a4 4 0 0 1 8 0v2" stroke="var(--accent)" stroke-width="1.6"/></svg>
+      </div>
+      <div>
+        <h2>Storage trunks &mdash; so nothing forgets</h2>
+        <p>Some crates need to <strong>remember</strong> things &mdash; a database remembering every chat, for instance. If Kubernetes ever swaps a crate for a fresh one, a plain crate forgets everything overnight! So we strap on a waterproof trunk (a <strong>Persistent Volume</strong>) that stays behind and gets reattached to the new crate, memories intact.</p>
+        <div class="callout"><strong>A real example:</strong> a brand-new trunk has a stray folder called <code>lost+found</code> sitting in it. That is normal, but a database's first-time setup refuses to start in a folder that is not empty, so it has to be pointed at a clean sub-folder inside.</div>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M6 3h9l3 3v15H6V3Z" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><path d="M9 9h6M9 13h6M9 17h3" stroke="var(--accent)" stroke-width="1.4"/><rect x="13" y="13" width="6" height="7" rx="1" fill="var(--bg-panel)" stroke="var(--accent-2)" stroke-width="1.4"/><path d="M15 13v-1.5a1.5 1.5 0 0 1 3 0V13" stroke="var(--accent-2)" stroke-width="1.4"/></svg>
+      </div>
+      <div>
+        <h2>Notes & locked notes &mdash; ConfigMaps and Secrets</h2>
+        <p>Every app needs settings (like which color theme to use) and passwords. Settings go on an open note anyone nearby can read &mdash; a <strong>ConfigMap</strong>. Passwords go in a <strong>locked</strong> note &mdash; a <strong>Secret</strong> &mdash; that only the right crates are allowed to open.</p>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5v13Z" stroke="var(--accent)" stroke-width="1.6" stroke-linejoin="round"/><path d="M4 19.5A2.5 2.5 0 0 0 6.5 22H20" stroke="var(--accent)" stroke-width="1.6"/></svg>
+      </div>
+      <div>
+        <h2>Helm &mdash; the whole order, written as one recipe</h2>
+        <p>Writing out every crate, signpost, and trunk by hand, one instruction at a time, would take forever and be easy to get wrong. So each app's whole order gets written down once, in a <strong>Helm chart</strong> &mdash; a recipe book. One command reads the book and sets everything up at once. Want to change something? Edit the recipe, run it again.</p>
+        <div class="pair"><span class="pill mono">helm install</span><span class="pill mono">helm upgrade</span></div>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M3 12h13M12 5l7 7-7 7" stroke="var(--accent-2)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><rect x="3" y="4" width="4" height="16" rx="1" stroke="var(--accent-2)" stroke-width="1.6"/></svg>
+      </div>
+      <div>
+        <h2>The front gate &mdash; shared, and run by the platform team</h2>
+        <p>Inside the harbor, crates talk to each other freely. Visitors from the internet come through one shared front gate that the platform team runs: a load balancer (<strong>ALB</strong>) plus a gateway. To open a door for an app, we add a small route (an <strong>HTTPRoute</strong>) that says "requests for this hostname go to that Service." Today only <strong>mosaic-ai-chat</strong> has doors, at prod.ai.mosaicinsurance.com and nonprod.ai.mosaicinsurance.com. worldmonitor and common-service stay internal-only on purpose until we decide who should reach them.</p>
+      </div>
+    </div>
+
+    <div class="chapter">
+      <div class="icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M9 12l2 2 4-4" stroke="var(--ok)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="12" r="9" stroke="var(--ok)" stroke-width="1.6"/></svg>
+      </div>
+      <div>
+        <h2>Where it landed</h2>
+        <p>Three apps, each packed into lunchboxes on Amazon's shelf, with one recipe book per app describing every crate, signpost, trunk, and note it needs. All of it lives on Amazon's rented harbor, inside our own <strong>mosaic-ai</strong> dock, watched around the clock by the harbor master, who restarts anything that falls overboard whether or not anyone is looking.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= PANEL: TECHNICAL OVERVIEW ================= -->
+  <section id="panel-tech" role="tabpanel" aria-labelledby="tab-tech" hidden>
+    <p class="eyebrow">Technical overview &middot; verified against the live cluster on 5 Oct 2026</p>
+    <p class="lede">How the MosAIc applications are packaged, deployed and operated on Amazon EKS, with the current limitations and the recommended next steps. This page describes what is running now, not a target design.</p>
+
+    <nav class="toc" aria-label="Technical overview sections">
+      <a href="#t-glance">Platform</a>
+      <a href="#t-arch">Architecture</a>
+      <a href="#t-workloads">Workloads</a>
+      <a href="#t-delivery">Delivery</a>
+      <a href="#t-avail">Availability</a>
+      <a href="#t-sec">Security</a>
+      <a href="#t-gaps">Gaps and next steps</a>
+      <a href="#t-deps">Open dependencies</a>
+    </nav>
+
+    <section class="wb-sec" id="t-glance">
+      <p class="sec-tag">Platform</p>
+      <h2>Platform at a glance</h2>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Area</th><th>Current state</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Compute</td><td>Amazon EKS cluster <code class="mono">mosaic</code> in eu-west-1 (Kubernetes v1.36), shared with other teams. About 40 worker nodes across two Availability Zones. The cluster, nodes, load balancer and gateway are managed with Terraform by the platform team.</td></tr>
+            <tr><td class="sym">Our footprint</td><td>Namespaces <code class="mono">mosaic-ai</code> (prod) and <code class="mono">mosaic-ai-nonprod</code>. Prod currently requests about 2.6 vCPU and 4.9 GiB of memory across 14 pods.</td></tr>
+            <tr><td class="sym">Applications</td><td><strong>mosaic-ai-chat</strong>: MosAIc, a LibreChat-based assistant with MongoDB, Postgres with pgvector, Meilisearch, a RAG API and document conversion. <strong>worldmonitor</strong>: dashboard, AIS relay and Redis. <strong>mosaic-common-service</strong>: a FastAPI shared backend.</td></tr>
+            <tr><td class="sym">Packaging</td><td>Docker images in Amazon ECR (5 repositories). One Helm chart per application, stored in that application's repository.</td></tr>
+            <tr><td class="sym">Ingress and TLS</td><td>An internet-facing ALB shared by all teams (in a separate egress VPC) forwards to an Envoy Gateway implementing the Kubernetes Gateway API. Each application adds an HTTPRoute for its hostname. TLS terminates at the ALB with ACM certificates (policy <code class="mono">ELBSecurityPolicy-TLS13-1-2-2021-06</code>); traffic from the ALB into the cluster is HTTP inside the VPC.</td></tr>
+            <tr><td class="sym">DNS</td><td>Route 53 alias records for <code class="mono">prod.ai.mosaicinsurance.com</code> and <code class="mono">nonprod.ai.mosaicinsurance.com</code>, each in its own hosted zone, pointing at the shared ALB.</td></tr>
+            <tr><td class="sym">Authentication</td><td>SAML 2.0 single sign-on with Microsoft Entra ID. Email and password sign-in and registration are temporarily enabled on prod for testing.</td></tr>
+            <tr><td class="sym">Persistent storage</td><td>EBS volumes (<code class="mono">ebs-sc</code>) for MongoDB, Postgres, Meilisearch and Redis. EFS (<code class="mono">efs-sc</code>, a shared filesystem) for user uploads and the help-content cache.</td></tr>
+            <tr><td class="sym">Configuration</td><td>Kubernetes ConfigMaps and Secrets, created separately from the Helm releases and injected as environment variables.</td></tr>
+            <tr><td class="sym">Releases</td><td>Manual: <code class="mono">docker build</code>, push to ECR, then <code class="mono">helm upgrade --atomic</code>, first to nonprod and then to prod. Rollback by Helm revision or by redeploying a previous image tag.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">Environments</h3>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Environment</th><th>Hostname</th><th>Namespace</th><th>Contents</th><th>Sign-in</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Prod</td><td><code class="mono">prod.ai.mosaicinsurance.com</code></td><td><code class="mono">mosaic-ai</code></td><td>All three applications, 14 pods</td><td>SAML (registration pending) and temporary email login</td></tr>
+            <tr><td class="sym">Nonprod</td><td><code class="mono">nonprod.ai.mosaicinsurance.com</code></td><td><code class="mono">mosaic-ai-nonprod</code></td><td>mosaic-ai-chat only, 7 pods, with its own databases</td><td>SAML (registration pending)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wb-sec" id="t-arch">
+      <p class="sec-tag">Architecture</p>
+      <h2>Request, deployment and sign-in paths</h2>
+      <div class="diagram" role="img" aria-label="Architecture diagram. Request path: browser, Route 53, shared ALB, Envoy Gateway, a Kubernetes Service, then pods in the EKS cluster. The cluster runs mosaic-ai-chat, worldmonitor and mosaic-common-service with EBS and EFS storage and Secrets and ConfigMaps. To the right: Microsoft Entra ID provides SAML sign-in, Amazon ECR supplies images, and an operator workstation builds, pushes and deploys with Helm.">
+        <svg viewBox="0 0 900 365" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <marker id="t-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0L10 5L0 10z" fill="var(--fg-faint)"/>
+            </marker>
+          </defs>
+
+          <text class="t-cap" x="10" y="14">REQUEST PATH</text>
+          <rect class="t-box" x="10" y="22" width="90" height="52" rx="8"/>
+          <text class="t-lbl" x="55" y="44">Browser</text><text class="t-sub" x="55" y="60">HTTPS</text>
+          <rect class="t-box" x="125" y="22" width="100" height="52" rx="8"/>
+          <text class="t-lbl" x="175" y="44">Route 53</text><text class="t-sub" x="175" y="60">alias records</text>
+          <rect class="t-box aws" x="250" y="22" width="150" height="52" rx="8"/>
+          <text class="t-lbl" x="325" y="44">ALB (shared)</text><text class="t-sub" x="325" y="60">TLS ends here, ACM cert</text>
+          <rect class="t-box" x="425" y="22" width="150" height="52" rx="8"/>
+          <text class="t-lbl" x="500" y="44">Envoy Gateway</text><text class="t-sub" x="500" y="60">HTTPRoute per hostname</text>
+          <rect class="t-box" x="600" y="22" width="110" height="52" rx="8"/>
+          <text class="t-lbl" x="655" y="44">Service</text><text class="t-sub" x="655" y="60">ClusterIP</text>
+          <path class="t-flow" d="M100 48 H125"/><path class="t-flow" d="M225 48 H250"/>
+          <path class="t-flow" d="M400 48 H425"/><path class="t-flow" d="M575 48 H600"/>
+          <path class="t-flow" d="M655 74 V103"/>
+
+          <text class="t-txt" x="740" y="38">solid: request and deploy flow</text>
+          <text class="t-txt" x="740" y="54">dashed: sign-in (SAML)</text>
+
+          <rect class="t-box k8s" x="10" y="105" width="700" height="250" rx="12"/>
+          <text class="t-h" x="24" y="124">EKS cluster mosaic &middot; eu-west-1 &middot; 2 AZs &middot; Kubernetes v1.36 &middot; shared with other teams</text>
+
+          <rect class="t-inner" x="25" y="138" width="300" height="122" rx="8"/>
+          <text class="t-h" x="37" y="157">mosaic-ai-chat</text>
+          <text class="t-txt" x="37" y="175">api: 1 replica, rolling update</text>
+          <text class="t-txt" x="37" y="190">rag-api &middot; gotenberg &middot; pptx-convert</text>
+          <text class="t-txt" x="37" y="205">mongodb &middot; pgvector &middot; meilisearch</text>
+          <text class="t-txt" x="37" y="225">mosaic-ai (prod) and mosaic-ai-nonprod</text>
+          <text class="t-txt" x="37" y="241">public hostnames via HTTPRoute</text>
+
+          <rect class="t-inner" x="335" y="138" width="180" height="122" rx="8"/>
+          <text class="t-h" x="347" y="157">worldmonitor</text>
+          <text class="t-txt" x="347" y="175">app: 2 replicas, rolling update</text>
+          <text class="t-txt" x="347" y="190">ais-relay &middot; redis-rest</text>
+          <text class="t-txt" x="347" y="205">redis</text>
+          <text class="t-txt" x="347" y="225">mosaic-ai (prod only)</text>
+          <text class="t-txt" x="347" y="241">internal only</text>
+
+          <rect class="t-inner" x="525" y="138" width="170" height="122" rx="8"/>
+          <text class="t-h" x="537" y="157">mosaic-common-service</text>
+          <text class="t-txt" x="537" y="175">FastAPI, 2 replicas</text>
+          <text class="t-txt" x="537" y="190">rolling update</text>
+          <text class="t-txt" x="537" y="205">Redshift access off</text>
+          <text class="t-txt" x="537" y="225">mosaic-ai (prod only)</text>
+          <text class="t-txt" x="537" y="241">internal only</text>
+
+          <rect class="t-inner" x="25" y="278" width="300" height="62" rx="8"/>
+          <text class="t-h" x="37" y="297">EBS (ebs-sc), pinned to one AZ</text>
+          <text class="t-txt" x="37" y="314">mongodb 30Gi &middot; pgvector 20Gi</text>
+          <text class="t-txt" x="37" y="329">meilisearch 20Gi &middot; redis 5Gi</text>
+
+          <rect class="t-inner" x="335" y="278" width="180" height="62" rx="8"/>
+          <text class="t-h" x="347" y="297">EFS (efs-sc), multi-AZ</text>
+          <text class="t-txt" x="347" y="314">chat uploads 20Gi</text>
+          <text class="t-txt" x="347" y="329">help-content cache 5Gi</text>
+
+          <rect class="t-inner" x="525" y="278" width="170" height="62" rx="8"/>
+          <text class="t-h" x="537" y="297">Secrets, ConfigMaps</text>
+          <text class="t-txt" x="537" y="314">injected as env vars</text>
+          <text class="t-txt" x="537" y="329">managed outside Helm</text>
+
+          <rect class="t-box" x="740" y="120" width="150" height="58" rx="8"/>
+          <text class="t-lbl" x="815" y="144">Microsoft Entra ID</text><text class="t-sub" x="815" y="160">SAML 2.0 sign-in</text>
+          <path class="t-flow t-dash" d="M740 149 H712"/>
+
+          <rect class="t-box aws" x="740" y="198" width="150" height="58" rx="8"/>
+          <text class="t-lbl" x="815" y="222">Amazon ECR</text><text class="t-sub" x="815" y="238">5 repos, nodes pull images</text>
+          <path class="t-flow" d="M740 227 H712"/>
+
+          <rect class="t-box" x="740" y="282" width="150" height="58" rx="8"/>
+          <text class="t-lbl" x="815" y="306">Operator workstation</text><text class="t-sub" x="815" y="322">docker &middot; helm &middot; kubectl</text>
+          <path class="t-flow" d="M815 282 V258"/>
+          <path class="t-flow" d="M740 311 H712"/>
+        </svg>
+      </div>
+      <p class="fig-cap">Envoy Gateway runs inside the cluster (namespace <code class="mono">envoy-gateway-system</code>) and, with the ALB, is operated by the platform team. The workstation pushes images to ECR and applies Helm releases through the Kubernetes API.</p>
+    </section>
+
+    <section class="wb-sec" id="t-workloads">
+      <p class="sec-tag">Workloads</p>
+      <h2>Workload inventory</h2>
+      <div class="map-wrap">
+        <table class="map-table" style="min-width:720px">
+          <thead><tr><th>Component</th><th>Replicas and update strategy</th><th>State</th><th>Exposure</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">mosaic-ai-chat api</td><td>1 replica. RollingUpdate with maxSurge 1 and maxUnavailable 0; zero downtime verified on both environments.</td><td>EFS: uploads 20Gi, help-content cache 5Gi</td><td>Public through an HTTPRoute (prod and nonprod)</td></tr>
+            <tr><td class="sym">rag-api, gotenberg, pptx-convert</td><td>1 replica each. RollingUpdate.</td><td>Stateless</td><td>Internal</td></tr>
+            <tr><td class="sym">MongoDB 8.0.20</td><td>1 replica. Recreate (volume attaches to one node at a time).</td><td>EBS 30Gi</td><td>Internal. Runs without authentication.</td></tr>
+            <tr><td class="sym">Postgres 15 with pgvector 0.8.0</td><td>1 replica. Recreate.</td><td>EBS 20Gi</td><td>Internal. Password-protected.</td></tr>
+            <tr><td class="sym">Meilisearch v1.35.1</td><td>1 replica. Recreate.</td><td>EBS 20Gi. Rebuildable from MongoDB.</td><td>Internal. Master key.</td></tr>
+            <tr><td class="sym">worldmonitor app</td><td>2 replicas. RollingUpdate.</td><td>Stateless</td><td>Internal</td></tr>
+            <tr><td class="sym">worldmonitor ais-relay, redis-rest, redis</td><td>1 replica each. RollingUpdate, except Redis (Recreate).</td><td>Redis: EBS 5Gi</td><td>Internal</td></tr>
+            <tr><td class="sym">mosaic-common-service</td><td>2 replicas. RollingUpdate.</td><td>Stateless. Redshift access disabled.</td><td>Internal</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wb-sec" id="t-delivery">
+      <p class="sec-tag">Delivery</p>
+      <h2>Release process</h2>
+      <p class="sec-sub">The same seven steps apply to every application. Details and commands are in the workbook tab.</p>
+      <ol class="steps">
+        <li>Build the image from a clean working tree and tag it with the date and commit, for example <code class="mono">20261002-3f9a1c2</code>.</li>
+        <li>Push to ECR and confirm the image digest.</li>
+        <li>Set the tag in the environment's Helm values file and run <code class="mono">helm lint</code>.</li>
+        <li>Deploy to nonprod with <code class="mono">helm upgrade --atomic --timeout 5m</code>. A release that fails its readiness checks is rolled back automatically.</li>
+        <li>Verify: rollout status, pod readiness, <code class="mono">/health</code>, <code class="mono">/api/config</code>, logs, and one user journey.</li>
+        <li>Promote the same tag to prod with the same command, then verify again.</li>
+        <li>Record the Helm revision and image digest in the release log.</li>
+      </ol>
+      <div class="callout">
+        <p><strong>Current practice.</strong> Releases are run by hand from one workstation. mosaic-ai-chat and worldmonitor still run <code class="mono">:latest</code> tags; a baseline version tag now exists for mosaic-ai-chat so that rollback is possible, and the workbook requires unique tags from the next release. The environment-specific Helm values files are not in version control.</p>
+      </div>
+    </section>
+
+    <section class="wb-sec" id="t-avail">
+      <p class="sec-tag">Availability</p>
+      <h2>Failure behaviour</h2>
+      <div class="map-wrap">
+        <table class="map-table" style="min-width:680px">
+          <thead><tr><th>Failure</th><th>Behaviour today</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Container crash or failed health check</td><td>The kubelet restarts the container. Readiness probes keep traffic away from a pod until it is healthy. Recovery in seconds.</td></tr>
+            <tr><td class="sym">Application release</td><td>Rolling update; the new pod must pass readiness before the old one stops. Probing <code class="mono">/health</code> every 0.4 s through a full rollout returned 200 for all 67 requests on prod.</td></tr>
+            <tr><td class="sym">Worker node failure</td><td>Pods are rescheduled automatically. worldmonitor-app and mosaic-common-service keep serving from their second replica. The single-replica mosaic-ai-chat api is unavailable until it is rescheduled, typically minutes.</td></tr>
+            <tr><td class="sym">Availability Zone failure</td><td>Stateless and EFS-backed pods can start in the other zone. MongoDB, Meilisearch and Redis (volumes in eu-west-1a) and pgvector (eu-west-1b) cannot move: their EBS volumes are zone-bound. Those services stay down until the zone recovers or data is restored from a backup. There is no cross-zone replication.</td></tr>
+            <tr><td class="sym">Data loss or corruption</td><td>No scheduled backups are configured. Manual <code class="mono">mongodump</code> and <code class="mono">pg_dump</code> procedures are tested. The recovery point is the time of the last manual dump.</td></tr>
+            <tr><td class="sym">Region failure</td><td>Not covered. There is no disaster recovery environment.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wb-sec" id="t-sec">
+      <p class="sec-tag">Security</p>
+      <h2>Security and access</h2>
+      <div class="map-wrap">
+        <table class="map-table" style="min-width:680px">
+          <thead><tr><th>Area</th><th>Current state</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Transport</td><td>HTTPS to the ALB with a TLS 1.2 and 1.3 policy. Traffic from the ALB to Envoy and to the pods is unencrypted HTTP inside the VPC.</td></tr>
+            <tr><td class="sym">User authentication</td><td>SAML 2.0 with Microsoft Entra ID. New hostnames still need to be registered on the Entra Enterprise App. Local accounts are enabled on prod temporarily.</td></tr>
+            <tr><td class="sym">Cluster access</td><td>EKS access entries per IAM principal, administered by the platform team. The operator uses an IAM user with a long-lived access key.</td></tr>
+            <tr><td class="sym">Secrets</td><td>Kubernetes Secrets, created and rotated by hand. Not sourced from a secrets manager. The effect of each rotation is documented in the workbook.</td></tr>
+            <tr><td class="sym">Network segmentation</td><td>No NetworkPolicy exists in either namespace. MongoDB has no authentication, as in the earlier Docker deployment, so it relies on network reachability alone. Whether cluster-level policy applies is a question for the platform team.</td></tr>
+            <tr><td class="sym">Container images</td><td>ECR repositories are mutable and scan-on-push is off. Images are built on a workstation.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wb-sec" id="t-gaps">
+      <p class="sec-tag">Gaps and next steps</p>
+      <h2>Recommended improvements</h2>
+      <p class="sec-sub">Ordered by risk. None blocks the current rollout; the first two should be closed before real user data is on the platform.</p>
+      <div class="map-wrap">
+        <table class="map-table" style="min-width:760px">
+          <thead><tr><th>Priority</th><th>Gap</th><th>Recommendation</th><th>Owner</th></tr></thead>
+          <tbody>
+            <tr><td><span class="risk high">high</span></td><td class="sym">No scheduled backups of MongoDB or Postgres</td><td>Automate EBS snapshots (AWS Backup) or scheduled dumps to S3, and rehearse a restore.</td><td>App team, platform team for snapshot permissions</td></tr>
+            <tr><td><span class="risk high">high</span></td><td class="sym">No monitoring or alerting</td><td>Add an external uptime check on <code class="mono">/health</code> with alerts, then cluster metrics (metrics-server and a metrics and log stack such as CloudWatch Container Insights).</td><td>App team and platform team</td></tr>
+            <tr><td><span class="risk mid">medium</span></td><td class="sym">Manual releases from one workstation, mutable tags, no image scanning</td><td>CI pipeline that builds immutable tags, scans images and deploys nonprod then prod. Keep Helm values in a private repository. Enable ECR tag immutability and scan on push.</td><td>App team</td></tr>
+            <tr><td><span class="risk mid">medium</span></td><td class="sym">Single-AZ, single-replica data tier</td><td>Accept with backups for now. Consider a MongoDB replica set or a managed database if availability targets require it.</td><td>App team</td></tr>
+            <tr><td><span class="risk mid">medium</span></td><td class="sym">Single-replica chat api; login sessions held in process memory</td><td>Add Redis for sessions (<code class="mono">USE_REDIS</code>), then run two replicas with a PodDisruptionBudget.</td><td>App team</td></tr>
+            <tr><td><span class="risk mid">medium</span></td><td class="sym">MongoDB unauthenticated, no NetworkPolicy</td><td>Enable MongoDB authentication and add NetworkPolicies limiting each service to its callers.</td><td>App team, with the platform team's policy guidance</td></tr>
+            <tr><td><span class="risk mid">medium</span></td><td class="sym">Long-lived IAM user key for cluster access</td><td>Move to SSO-backed role access with short-lived credentials.</td><td>Platform team and IT</td></tr>
+            <tr><td><span class="risk low">low</span></td><td class="sym">No autoscaling, quotas or disruption budgets</td><td>Add PodDisruptionBudgets for the two-replica services so node drains cannot remove both pods. Add autoscaling when load data exists.</td><td>App team</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="wb-sec" id="t-deps">
+      <p class="sec-tag">Open dependencies</p>
+      <h2>What is waiting on other teams</h2>
+      <div class="map-wrap">
+        <table class="map-table" style="min-width:680px">
+          <thead><tr><th>Dependency</th><th>Owner</th><th>Effect until done</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Attach the ACM certificates for the two bare hostnames to the ALB's HTTPS listener (SNI)</td><td>Platform team</td><td>Browsers show a certificate warning. The existing certificate covers only subdomains.</td></tr>
+            <tr><td class="sym">Register the SAML Identifier and Reply URL for both hostnames on the existing Entra Enterprise App, keeping its signing certificate</td><td>Microsoft / IT team</td><td>SSO fails with error AADSTS700016. Prod relies on temporary email login.</td></tr>
+            <tr><td class="sym">Migrate MongoDB, uploads and pgvector data from the EC2 deployment</td><td>App team</td><td>Prod holds no production data yet. The procedure is prepared.</td></tr>
+            <tr><td class="sym">After the above: disable email login and registration, rotate the JWT and Meilisearch keys</td><td>App team</td><td>Prod is not yet SSO-only.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+
+  <!-- ================= PANEL 1.5: BEFORE / AFTER ================= -->
+  <section id="panel-before" role="tabpanel" aria-labelledby="tab-before" hidden>
+    <p class="eyebrow">What actually changed from the EC2 way</p>
+    <p class="lede">Before: one server, reached by SSH, updated by hand. Here's exactly what that turned into, and the direct mapping between the old way of thinking and the new one.</p>
+
+    <div class="ba-pair">
+      <div class="ba-card old">
+        <p class="kicker">Before</p>
+        <h3>One ship, no captain</h3>
+        <p>One EC2 instance was the whole operation. To update it: SSH in, <code class="mono">git pull</code>, then repack the lunchboxes by hand &mdash; <code class="mono">docker compose up -d --build</code> for one app, <code class="mono">scripts/upgrade.sh</code> for another, a different ritual for each. If a container fell over, Docker might quietly restart it &mdash; but only as long as the box itself stayed up. If the box itself had a bad day, everything on it went down until a person noticed.</p>
+      </div>
+      <div class="ba-card new">
+        <p class="kicker">After</p>
+        <h3>A fleet, with a harbor master watching</h3>
+        <p>There isn't one ship anymore &mdash; there's a whole fleet (dozens of real computers, shared with other teams), watched around the clock by Kubernetes. Updating any app is the same command shape every time: <code class="mono">helm upgrade --install</code>. If a container falls over, a new one appears within seconds. If an entire machine dies, that app's pods quietly move to a different one &mdash; nobody has to notice, let alone SSH in.</p>
+      </div>
+    </div>
+
+    <h2 style="font-size:1.1rem; margin-bottom:4px">The direct mapping</h2>
+    <p class="lede" style="margin-bottom:0">One correction worth making up front: a <strong>Pod</strong> is not the new EC2 instance. That's a <strong>Node</strong>. A Pod maps to what one of your containers already was.</p>
+    <div class="map-wrap">
+      <table class="map-table">
+        <thead><tr><th>Before (EC2)</th><th></th><th>After (Kubernetes)</th><th>What actually changed</th></tr></thead>
+        <tbody>
+          <tr class="flagged">
+            <td class="old">The EC2 instance &mdash; the whole server</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Node</strong></td>
+            <td class="why">You had one. Now there are many, pooled together as one fleet.</td>
+          </tr>
+          <tr class="flagged">
+            <td class="old">One container / one docker-compose service</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Pod</strong></td>
+            <td class="why">This is the real match for what you used to run &mdash; not the EC2 box.</td>
+          </tr>
+          <tr>
+            <td class="old">docker-compose.yml</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Helm chart</strong></td>
+            <td class="why">Same idea &mdash; describe every piece &mdash; now able to describe a fleet-wide setup, not one box.</td>
+          </tr>
+          <tr>
+            <td class="old">docker compose up -d --build / scripts/upgrade.sh</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>helm upgrade --install</strong></td>
+            <td class="why">Same purpose, now one command shape for every app instead of three separate habits.</td>
+          </tr>
+          <tr>
+            <td class="old">.env file sitting on disk</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Secret / ConfigMap</strong></td>
+            <td class="why">Same idea, now an access-controlled object instead of a plaintext file anyone on the box can read.</td>
+          </tr>
+          <tr>
+            <td class="old">Compose's container-name networking</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Service</strong></td>
+            <td class="why">Same idea &mdash; call things by name &mdash; now works across the whole fleet and survives things moving.</td>
+          </tr>
+          <tr>
+            <td class="old">Hand-configured nginx</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>HTTPRoute on the shared gateway</strong></td>
+            <td class="why">Same job, the front door, now declared as a small YAML route on a gateway the platform team runs, instead of edited files on a box.</td>
+          </tr>
+          <tr>
+            <td class="old"><code class="mono">restart: unless-stopped</code></td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Kubernetes restarting + rescheduling pods</strong></td>
+            <td class="why">The old one only helped if the box itself stayed alive. This one survives the box dying too.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="font-size:1.1rem; margin-bottom:4px">The pros</h2>
+    <div style="margin-bottom:28px">
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Self-healing beyond anything Compose could do</strong> &mdash; survives an entire server dying, not just a container crashing.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>One deploy command, every app</strong> &mdash; instead of three different upgrade habits that had grown apart over time.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>A real rollback</strong> &mdash; <code class="mono">helm rollback</code> reverts everything a release touched (config, replica count, secret wiring), not just code the way <code class="mono">git checkout</code> did.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Room to grow</strong> &mdash; add more machines to the fleet, or tell one app to run more copies, without redesigning anything.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>The chart is the whole truth</strong>, checked into git &mdash; not "whatever's currently configured on the box," half-remembered by whoever set it up.</p></div>
+    </div>
+
+    <div class="callout">
+      <strong>Worth knowing &mdash; this isn't free:</strong> more moving parts to learn; the fleet costs money even sitting idle, unlike one EC2 box that was just a box; and some things are not built yet. Only mosaic-ai-chat is reachable from the internet so far, there is no automated build pipeline (docker build &rarr; push &rarr; helm upgrade are still run by hand), and nothing auto-scales.
+    </div>
+  </section>
+
+  <!-- ================= PANEL 3: DAY 2 OPS ================= -->
+  <section id="panel-kubus" role="tabpanel" aria-labelledby="tab-kubus" hidden>
+    <p class="eyebrow">Running it day to day &mdash; old habits, mapped forward</p>
+    <p class="lede">Everything below is the same move you used to make on the EC2 box, pointed at its new home. Two ways to do each one: <strong>Kubus</strong>, a local GUI that reads the same kubeconfig as <code class="mono">kubectl</code> and needs no separate setup, or the command line.</p>
+
+    <div class="map-wrap">
+      <table class="map-table">
+        <thead><tr><th>Old habit (EC2 + compose)</th><th></th><th>Kubus (click)</th><th>Command line</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="old">SSH into the box</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Pod &#8942; &rarr; Shell</strong> (into a container), or <strong>Node &#8942; &rarr; Node shell</strong> for the machine itself, rarely needed now</td>
+            <td class="why"><code class="mono">kubectl exec -it &lt;pod&gt; -- bash</code></td>
+          </tr>
+          <tr>
+            <td class="old">git pull to get new code</td><td class="arrow">&rarr;</td>
+            <td class="new">No equivalent &mdash; code doesn't update in place anymore. New code means a new image, then a redeploy. The full procedure is in the <strong>workbook</strong> tab.</td>
+            <td class="why"><code class="mono">docker build</code> / <code class="mono">push</code>, then <code class="mono">helm upgrade</code></td>
+          </tr>
+          <tr>
+            <td class="old">Edit .env</td><td class="arrow">&rarr;</td>
+            <td class="new">Secret or ConfigMap's <strong>Data</strong> tab &mdash; click a key, edit the real value (not base64), <strong>Review &amp; apply</strong> shows a diff first</td>
+            <td class="why">dump &rarr; edit &rarr; <code class="mono">kubectl create secret ... --dry-run=client -o yaml | kubectl apply -f -</code></td>
+          </tr>
+          <tr>
+            <td class="old">docker compose up -d --build / restart to pick up .env changes</td><td class="arrow">&rarr;</td>
+            <td class="new">Deployment &#8942; &rarr; <strong>Rollout restart</strong></td>
+            <td class="why"><code class="mono">kubectl rollout restart deployment &lt;name&gt;</code></td>
+          </tr>
+          <tr>
+            <td class="old">docker compose logs -f / docker logs</td><td class="arrow">&rarr;</td>
+            <td class="new">Pod &#8942; &rarr; <strong>Logs</strong> &mdash; aggregated across every replica, colour-coded, filterable</td>
+            <td class="why"><code class="mono">kubectl logs -f &lt;pod&gt;</code></td>
+          </tr>
+          <tr>
+            <td class="old">docker ps / eyeballing container status</td><td class="arrow">&rarr;</td>
+            <td class="new"><strong>Pods</strong> list, or the <strong>Overview</strong> dashboard for the whole cluster at a glance</td>
+            <td class="why"><code class="mono">kubectl get pods</code></td>
+          </tr>
+          <tr>
+            <td class="old"><code class="mono">restart: unless-stopped</code></td><td class="arrow">&rarr;</td>
+            <td class="new">Automatic &mdash; the harbor master does this on its own, nothing to click</td>
+            <td class="why">automatic</td>
+          </tr>
+          <tr>
+            <td class="old">scripts/upgrade.sh (the custom redeploy ritual)</td><td class="arrow">&rarr;</td>
+            <td class="new">Deployment &#8942; &rarr; <strong>Set image&hellip;</strong>, or edit the image field directly in the <strong>Manifest</strong> tab</td>
+            <td class="why"><code class="mono">helm upgrade --install</code></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h2 style="font-size:1.1rem; margin-bottom:4px">What Kubus actually gives you</h2>
+    <div style="margin-bottom:10px">
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Browse &amp; inspect</strong> &mdash; live lists across one or many clusters that update over a websocket, no refresh button. Click into anything for a plain-English summary (a crashing pod's banner says why, in one sentence, not just the raw <code class="mono">CrashLoopBackOff</code>), the full YAML in a real VS Code editor, and a map of what it's connected to.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Act, with a safety net</strong> &mdash; rollout restart, scale, roll back to any earlier revision, swap an image, cordon or drain a node, all from a menu. Mark a cluster "protected" and anything destructive makes you type the resource's name first before it happens.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Get inside things</strong> &mdash; a real terminal into any container or the node itself, logs aggregated across every replica of a workload in one colour-coded stream, port-forwarding, and copying files in or out.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Secrets handled carefully</strong> &mdash; every value is hidden (<code class="mono">&bull;&bull;&bull;&bull;</code>) until you explicitly reveal that one key. Nothing gets copied to your clipboard without asking first, and it's safe to screen-share while using it.</p></div>
+    </div>
+
+    <div class="callout">
+      <strong>Same kubeconfig, no separate login:</strong> Kubus reads the exact same contexts <code class="mono">kubectl config get-contexts</code> shows. If <code class="mono">kubectl get nodes</code> works on this machine, Kubus already sees the cluster &mdash; nothing to configure on its side.
+    </div>
+  </section>
+
+  <!-- ================= PANEL 4: MAINTENANCE WORKBOOK ================= -->
+  <section id="panel-workbook" role="tabpanel" aria-labelledby="tab-workbook" hidden>
+    <p class="eyebrow">Maintenance workbook &middot; namespaces mosaic-ai and mosaic-ai-nonprod</p>
+    <p class="lede">New code no longer arrives by <code class="mono">git pull</code> on a server. You build an image, push it to ECR under a new tag, and tell Helm to run that tag. Kubernetes then pulls the image from ECR itself. This workbook covers doing that safely, undoing it, and keeping everything else healthy. Commands are PowerShell, run from your workstation; the <code class="mono">kubectl</code> and <code class="mono">helm</code> lines also work unchanged in a Linux shell.</p>
+
+    <div class="wb-flow" aria-label="Release flow">
+      <span class="pill">commit</span><span class="sep">&rarr;</span>
+      <span class="pill">docker build</span><span class="sep">&rarr;</span>
+      <span class="pill aws">push to ECR, new tag</span><span class="sep">&rarr;</span>
+      <span class="pill">edit tag in values file</span><span class="sep">&rarr;</span>
+      <span class="pill">helm upgrade nonprod</span><span class="sep">&rarr;</span>
+      <span class="pill ok">verify</span><span class="sep">&rarr;</span>
+      <span class="pill">helm upgrade prod</span><span class="sep">&rarr;</span>
+      <span class="pill ok">verify + log</span>
+    </div>
+
+    <nav class="toc" aria-label="Workbook sections">
+      <a href="#wb-ref">1 Reference</a>
+      <a href="#wb-pre">2 Pre-flight</a>
+      <a href="#wb-up">3 Upgrade</a>
+      <a href="#wb-down">4 Rollback</a>
+      <a href="#wb-data">5 Data &amp; backups</a>
+      <a href="#wb-vol">5b Moving a volume</a>
+      <a href="#wb-cfg">6 Config &amp; secrets</a>
+      <a href="#wb-verify">7 Verify</a>
+      <a href="#wb-fix">8 Troubleshooting</a>
+      <a href="#wb-ops">9 Cheat sheet</a>
+      <a href="#wb-own">10 Housekeeping</a>
+    </nav>
+
+    <div class="callout bad">
+      <p><strong>Boundaries.</strong> This workbook covers only the <code class="mono">mosaic-ai</code> (prod) and <code class="mono">mosaic-ai-nonprod</code> namespaces. The <code class="mono">mosaic</code>, <code class="mono">envoy-gateway-system</code> and <code class="mono">kube-system</code> namespaces belong to other teams: look, never change.</p>
+      <p>Every command names its namespace with <code class="mono">-n</code>. Do not rely on a default namespace.</p>
+    </div>
+
+    <!-- 1 REFERENCE -->
+    <section class="wb-sec" id="wb-ref">
+      <p class="sec-tag">Section 1</p>
+      <h2>Service reference</h2>
+      <p class="sec-sub">What exists, where its chart lives, which key holds the image tag, and what an upgrade does to users. Values for the prod and nonprod environments are in files that are not in git, so see section 10 for where to keep copies.</p>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Service</th><th>ECR repositories</th><th>Image tag key</th><th>Upgrade impact</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="sym">mosaic-ai-chat<br><span class="risk">prod &middot; mosaic-ai</span></td>
+              <td><code class="mono">mosaic-ai-chat</code></td>
+              <td><code class="mono">api.image.tag</code><br>in <code class="mono">values-prod.yaml</code></td>
+              <td><span class="risk low">no downtime</span><p style="margin-top:6px">Rolling update since 2 Oct 2026: the new pod must pass its readiness check before the old one stops. Uploads and the help cache moved to shared EFS volumes to allow this. Tested: 67 of 67 health checks passed through a rollout.</p></td>
+            </tr>
+            <tr>
+              <td class="sym">mosaic-ai-chat<br><span class="risk">nonprod &middot; mosaic-ai-nonprod</span></td>
+              <td>same image as prod</td>
+              <td><code class="mono">api.image.tag</code><br>in <code class="mono">values-nonprod.yaml</code></td>
+              <td><span class="risk low">no downtime</span><p style="margin-top:6px">Same setup (64 of 64 checks passed in the rehearsal). Every chat release still goes here first.</p></td>
+            </tr>
+            <tr>
+              <td class="sym">worldmonitor<br><span class="risk">prod &middot; mosaic-ai</span></td>
+              <td><code class="mono">worldmonitor</code><br><code class="mono">worldmonitor-ais-relay</code><br><code class="mono">worldmonitor-redis-rest</code></td>
+              <td><code class="mono">app.image.tag</code><br><code class="mono">aisRelay.image.tag</code><br><code class="mono">redisRest.image.tag</code></td>
+              <td><span class="risk low">no downtime for the app</span><p style="margin-top:6px">Rolling update, two app replicas. The relay and redis-rest have one replica each and swap over in seconds.</p></td>
+            </tr>
+            <tr>
+              <td class="sym">mosaic-common-service<br><span class="risk">prod &middot; mosaic-ai</span></td>
+              <td><code class="mono">mosaic-common-service</code></td>
+              <td><code class="mono">image.tag</code></td>
+              <td><span class="risk low">no downtime</span><p style="margin-top:6px">Rolling update, two replicas.</p></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="lede" style="font-size:.92rem">Run each upgrade from that service's repository root: <code class="mono">mosaic-ai-chat</code>, <code class="mono">worldmonitor_aidan_mosaic</code>, <code class="mono">mosaic_common_service</code>. Charts are all under <code class="mono">deploy/helm/&lt;name&gt;</code>. The in-cluster data services (mongodb, vectordb, meilisearch) are covered in section 5 and are not part of a routine release. They stay on single-attach disks with the Recreate strategy by design; do not move databases onto EFS.</p>
+    </section>
+
+    <!-- 2 PRE-FLIGHT -->
+    <section class="wb-sec" id="wb-pre">
+      <p class="sec-tag">Section 2</p>
+      <h2>Pre-flight checklist</h2>
+      <p class="sec-sub">Tick each item before changing anything. Ticks are remembered in this browser only.</p>
+      <ul class="checklist" id="preflight">
+        <li><label><input type="checkbox" data-k="pf1"><span><strong>AWS identity is right.</strong> <code class="mono">aws sts get-caller-identity --profile mosaic</code> shows your own IAM user.</span></label></li>
+        <li><label><input type="checkbox" data-k="pf2"><span><strong>Cluster reachable.</strong> <code class="mono">kubectl get nodes</code> lists nodes without an error.</span></label></li>
+        <li><label><input type="checkbox" data-k="pf3"><span><strong>Docker is running and ECR login is fresh.</strong> ECR tokens last 12 hours, so log in again at the start of every session (step A).</span></label></li>
+        <li><label><input type="checkbox" data-k="pf4"><span><strong>Current state recorded.</strong> Run <code class="mono">helm -n mosaic-ai history &lt;release&gt;</code> and note the revision and the image tag now running. This is your way back.</span></label></li>
+        <li><label><input type="checkbox" data-k="pf5"><span><strong>A rollback target exists.</strong> The previous image has a version tag in ECR, not only <code class="mono">:latest</code> (section 4 explains why this matters).</span></label></li>
+        <li><label><input type="checkbox" data-k="pf6"><span><strong>Working tree is committed.</strong> <code class="mono">git status --short</code> prints nothing, so the tag identifies the code in the image.</span></label></li>
+        <li><label><input type="checkbox" data-k="pf7"><span><strong>Users warned for anything risky.</strong> Routine releases no longer cause an outage, but a bad release can still break the app. Give notice before big changes.</span></label></li>
+        <li><label><input type="checkbox" data-k="pf8"><span><strong>Backups taken if data is involved.</strong> Any change to a database image, schema, or volume needs section 5 first.</span></label></li>
+      </ul>
+      <div class="wb-tools"><button class="wb-btn" id="clear-ticks" type="button">clear ticks</button></div>
+    </section>
+
+    <!-- 3 UPGRADE -->
+    <section class="wb-sec" id="wb-up">
+      <p class="sec-tag">Section 3</p>
+      <h2>Standard upgrade</h2>
+      <p class="sec-sub">One procedure for all three services. Steps run in order because each depends on the one before.</p>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">A</span><h3>Log in to ECR</h3></div>
+        <p class="what">Needed once per 12 hours. The registry address is used by every later step.</p>
+        <div class="cmd"><pre><code>$env:AWS_PROFILE = "mosaic"
+$REG = "481781217475.dkr.ecr.eu-west-1.amazonaws.com"
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $REG</code><button class="copy-btn">copy</button></pre></div>
+        <div class="callout"><p><strong>Seen on a managed Windows laptop with Docker Desktop:</strong> <code class="mono">docker login</code> fails with <code class="mono">400 Bad Request: invalid argument</code>. The same token is accepted when sent directly, so the fault is in <code class="mono">docker login</code> itself. Write the token into Docker's config instead. Docker Desktop may restore <code class="mono">credsStore</code> after a restart, so rerun this if pushes start failing with an authentication error.</p></div>
+        <div class="cmd"><p class="label">fallback: write the token into ~/.docker/config.json (tested 2 Oct 2026)</p>
+          <pre><code>$token = aws ecr get-login-password --region eu-west-1
+$auth  = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes("AWS:$token"))
+$cfgPath = "$env:USERPROFILE\.docker\config.json"
+$cfg = Get-Content $cfgPath -Raw | ConvertFrom-Json
+if (-not $cfg.auths) { $cfg | Add-Member -NotePropertyName auths -NotePropertyValue ([pscustomobject]@{}) }
+$cfg.auths | Add-Member -NotePropertyName $REG -NotePropertyValue ([pscustomobject]@{auth=$auth}) -Force
+$cfg.PSObject.Properties.Remove('credsStore')
+[IO.File]::WriteAllText($cfgPath, ($cfg | ConvertTo-Json -Depth 10), (New-Object Text.UTF8Encoding $false))</code><button class="copy-btn">copy</button></pre></div>
+        <div class="cmd"><p class="label">check that it worked: prints a JSON manifest</p>
+          <pre><code>docker manifest inspect "$REG/mosaic-common-service:0.3.0"</code><button class="copy-btn">copy</button></pre></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">B</span><h3>Choose a new, unique image tag</h3></div>
+        <p class="what">Every release gets a tag that has never been used. The date plus the git commit works well.</p>
+        <div class="cmd"><pre><code>git status --short      # must print nothing
+$TAG = "$(Get-Date -Format yyyyMMdd)-$(git rev-parse --short HEAD)"
+$TAG                    # for example 20261002-3f9a1c2</code><button class="copy-btn">copy</button></pre></div>
+        <div class="callout bad">
+          <p><strong>Why not <code class="mono">:latest</code>.</strong> Three facts, all checked on the live cluster on 2 Oct 2026: the ECR repositories are mutable, every deployment uses <code class="mono">imagePullPolicy: IfNotPresent</code>, and mosaic-ai-chat and worldmonitor currently run <code class="mono">:latest</code>. Together that means:</p>
+          <p>1. A new push to <code class="mono">:latest</code> changes nothing in Helm's eyes, because the tag text is identical, and nodes that already cached the old image never pull the new one.</p>
+          <p>2. The push overwrites <code class="mono">:latest</code>, so the previous image is gone. There is nothing to roll back to.</p>
+          <p>Rule: a tag is used once and never reused. Only mosaic-common-service already follows this (<code class="mono">0.3.0</code>).</p>
+        </div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">C</span><h3>Build and push</h3></div>
+        <p class="what">Build only the images you changed. Run the block for your service from its repository root.</p>
+        <div class="cmd"><p class="label">mosaic-ai-chat</p>
+          <pre><code>docker build -f Dockerfile.k8s -t "$REG/mosaic-ai-chat:$TAG" .
+docker push "$REG/mosaic-ai-chat:$TAG"</code><button class="copy-btn">copy</button></pre></div>
+        <div class="cmd"><p class="label">worldmonitor (three images; build and push whichever changed)</p>
+          <pre><code>docker build -f Dockerfile -t "$REG/worldmonitor:$TAG" .
+docker build -f Dockerfile.relay -t "$REG/worldmonitor-ais-relay:$TAG" .
+docker build -f docker/Dockerfile.redis-rest -t "$REG/worldmonitor-redis-rest:$TAG" docker
+docker push "$REG/worldmonitor:$TAG"
+docker push "$REG/worldmonitor-ais-relay:$TAG"
+docker push "$REG/worldmonitor-redis-rest:$TAG"</code><button class="copy-btn">copy</button></pre></div>
+        <div class="cmd"><p class="label">mosaic-common-service</p>
+          <pre><code>docker build -t "$REG/mosaic-common-service:$TAG" .
+docker push "$REG/mosaic-common-service:$TAG"</code><button class="copy-btn">copy</button></pre></div>
+        <div class="cmd"><p class="label">confirm the tag is in ECR (repeat for each repository you pushed)</p>
+          <pre><code>aws ecr describe-images --repository-name mosaic-ai-chat --image-ids imageTag=$TAG --region eu-west-1 --query "imageDetails[0].imageDigest" --output text</code><button class="copy-btn">copy</button></pre></div>
+        <p class="fixed-note">mosaic-ai-chat is the heavy build because it compiles the whole LibreChat client. Allow several minutes.</p>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">D</span><h3>Put the new tag in the values file</h3></div>
+        <p class="what">Edit the file, then check the chart still renders. Start with the nonprod file for mosaic-ai-chat; the other two services have no nonprod copy and go straight to <code>values-prod.yaml</code>.</p>
+        <div class="cmd"><p class="label">deploy/helm/mosaic-ai-chat/values-nonprod.yaml</p>
+          <pre><code>api:
+  image:
+    tag: "20261002-3f9a1c2"</code><button class="copy-btn">copy</button></pre></div>
+        <div class="cmd"><pre><code>helm lint deploy/helm/mosaic-ai-chat -f deploy/helm/mosaic-ai-chat/values-nonprod.yaml</code><button class="copy-btn">copy</button></pre></div>
+        <div class="callout"><p><strong>Edit the file. Do not use <code class="mono">--set</code> for the image tag.</strong> A tag set on the command line is not saved anywhere. The next time you run <code class="mono">helm upgrade</code> for an unrelated config change, Helm applies the older tag from the file and quietly downgrades the app.</p></div>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">E</span><h3>Deploy to nonprod and verify</h3></div>
+        <p class="what">Chat only. <code>--atomic</code> waits for the pods to become ready and rolls back by itself if they do not, so a failed release does not stay broken.</p>
+        <div class="cmd"><pre><code>helm -n mosaic-ai-nonprod upgrade --install mosaic-ai-chat deploy/helm/mosaic-ai-chat -f deploy/helm/mosaic-ai-chat/values.yaml -f deploy/helm/mosaic-ai-chat/values-nonprod.yaml --atomic --timeout 5m --history-max 20</code><button class="copy-btn">copy</button></pre></div>
+        <p class="fixed-note">Now run every check in section 7 against <code>https://nonprod.ai.mosaicinsurance.com</code>. Do not continue until they pass. Worldmonitor and common-service have no nonprod copy, so for those the safety net is <code>--atomic</code> and the rollback target from section 4.</p>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">F</span><h3>Promote the same tag to prod</h3></div>
+        <p class="what">Edit the tag in the matching <code>values-prod.yaml</code> to the exact tag that passed nonprod, then run the command for your service.</p>
+        <div class="cmd"><pre><code># mosaic-ai-chat  (repo: mosaic-ai-chat)
+helm -n mosaic-ai upgrade --install mosaic-ai-chat deploy/helm/mosaic-ai-chat -f deploy/helm/mosaic-ai-chat/values.yaml -f deploy/helm/mosaic-ai-chat/values-prod.yaml --atomic --timeout 5m --history-max 20
+
+# worldmonitor  (repo: worldmonitor_aidan_mosaic)
+helm -n mosaic-ai upgrade --install worldmonitor deploy/helm/worldmonitor -f deploy/helm/worldmonitor/values.yaml -f deploy/helm/worldmonitor/values-prod.yaml --atomic --timeout 5m --history-max 20
+
+# mosaic-common-service  (repo: mosaic_common_service)
+helm -n mosaic-ai upgrade --install mosaic-common-service deploy/helm/mosaic-common-service -f deploy/helm/mosaic-common-service/values.yaml -f deploy/helm/mosaic-common-service/values-prod.yaml --atomic --timeout 5m --history-max 20</code><button class="copy-btn">copy</button></pre></div>
+        <p class="fixed-note">Run section 7 again against prod. If any check fails within ten minutes of the change, roll back first (section 4) and investigate afterwards.</p>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">G</span><h3>Record it</h3></div>
+        <p class="what">One line in the release log (section 10) per deployment. Without it, the next person cannot tell what is running or what to return to.</p>
+        <div class="cmd"><pre><code>helm -n mosaic-ai history mosaic-ai-chat --max 3
+kubectl -n mosaic-ai get deploy mosaic-ai-chat-api -o jsonpath="{.spec.template.spec.containers[0].image}"</code><button class="copy-btn">copy</button></pre></div>
+      </div>
+    </section>
+
+    <!-- 4 ROLLBACK -->
+    <section class="wb-sec" id="wb-down">
+      <p class="sec-tag">Section 4</p>
+      <h2>Rollback and downgrade</h2>
+      <p class="sec-sub">Decide quickly, act once, investigate afterwards. Prefer Helm for every undo so the cluster and Helm's records stay in agreement.</p>
+
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Situation</th><th>Action</th><th>Command</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="sym">The release failed while <code class="mono">--atomic</code> was running</td>
+              <td>Nothing to do. Helm already reverted. Confirm the pods are healthy.</td>
+              <td><code class="mono">helm -n mosaic-ai history &lt;release&gt;</code> shows a line starting "Rollback to".</td>
+            </tr>
+            <tr>
+              <td class="sym">The new image is bad and the previous one has a version tag <span class="risk low">preferred</span></td>
+              <td>Downgrade by tag: put the previous tag back in the values file and run the same upgrade command as step E or F.</td>
+              <td>Edit <code class="mono">tag:</code>, then <code class="mono">helm -n mosaic-ai upgrade ... --atomic</code>. Works for any tag still in ECR.</td>
+            </tr>
+            <tr>
+              <td class="sym">A values-file change broke something (config, replicas, routes)</td>
+              <td>Roll the release back to the last good revision.</td>
+              <td><code class="mono">helm -n mosaic-ai rollback mosaic-ai-chat &lt;REVISION&gt; --wait --timeout 5m</code></td>
+            </tr>
+            <tr>
+              <td class="sym">The release has to stop right now</td>
+              <td>Scale the workload to zero, then fix properly. Set it back afterwards, because Helm will not know you changed it.</td>
+              <td><code class="mono">kubectl -n mosaic-ai scale deploy/mosaic-ai-chat-api --replicas=0</code></td>
+            </tr>
+            <tr>
+              <td class="sym">A Secret was edited wrongly</td>
+              <td>Kubernetes keeps no history of Secrets, so restore from the copy you took before editing (section 6).</td>
+              <td><code class="mono">kubectl apply -f secrets-backup.yaml</code>, then restart the deployment.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="callout bad">
+        <p><strong>Where <code class="mono">helm rollback</code> stops.</strong> It restores only what the release created. It does not undo database contents, volume data, or the four objects that were created by hand outside Helm: <code class="mono">mosaic-ai-chat-secrets</code>, <code class="mono">mosaic-ai-chat-certs</code>, <code class="mono">mosaic-ai-chat-librechat-config</code> and <code class="mono">worldmonitor-secrets</code>. And if the earlier revision used <code class="mono">:latest</code>, rolling back re-applies the same tag and the running image does not change.</p>
+        <p>Do not roll mosaic-ai-chat back past revision 9 in prod or revision 3 in nonprod. Those revisions moved the uploads and help-cache volumes to EFS, and Kubernetes will not let a claim change back to a single-attach disk in place. Downgrade by image tag instead.</p>
+        <p>Avoid <code class="mono">kubectl rollout undo</code> for Helm-managed workloads. It works, but afterwards the cluster differs from what Helm recorded.</p>
+      </div>
+
+      <h3 class="sub">One-time: give every image a rollback target</h3>
+      <p class="sec-sub" style="margin-bottom:10px">Today the live images exist only under <code class="mono">:latest</code>. Before the first versioned release, add a second tag to the exact image that is running. This copies a reference, not the image, takes seconds, and changes nothing the cluster uses. Do it before the next push to <code class="mono">:latest</code>, because that push is what replaces the image. Tested on mosaic-ai-chat on 2 Oct 2026: the new tag and <code class="mono">latest</code> point at the same digest.</p>
+      <div class="cmd"><pre><code>$env:AWS_PROFILE = "mosaic"
+$stamp = Get-Date -Format yyyyMMdd
+foreach ($repo in "mosaic-ai-chat","worldmonitor","worldmonitor-ais-relay","worldmonitor-redis-rest") {
+  $img = aws ecr batch-get-image --repository-name $repo --region eu-west-1 --image-ids imageTag=latest --accepted-media-types "application/vnd.oci.image.index.v1+json" "application/vnd.docker.distribution.manifest.list.v2+json" "application/vnd.oci.image.manifest.v1+json" "application/vnd.docker.distribution.manifest.v2+json" --query "images[0]" --output json | ConvertFrom-Json
+  $f = "$env:TEMP\$repo-manifest.json"
+  [IO.File]::WriteAllText($f, $img.imageManifest, (New-Object Text.UTF8Encoding $false))
+  aws ecr put-image --repository-name $repo --region eu-west-1 --image-tag "baseline-$stamp" --image-manifest "file://$f" --image-manifest-media-type $img.imageManifestMediaType --query "image.imageId.imageTag" --output text
+  Remove-Item $f
+}</code><button class="copy-btn">copy</button></pre></div>
+      <p class="fixed-note">mosaic-ai-chat already has <code>baseline-20261002</code>, created from the image running in prod that day (digest <code>sha256:90ee2030&hellip;</code>). Run the loop for the three worldmonitor repositories before their next release. mosaic-common-service needs nothing: <code>0.3.0</code> is already a version tag.</p>
+    </section>
+
+    <!-- 5 DATA -->
+    <section class="wb-sec" id="wb-data">
+      <p class="sec-tag">Section 5</p>
+      <h2>Data services and backups</h2>
+      <p class="sec-sub">MongoDB (chats, users), Postgres with pgvector (document embeddings) and Meilisearch (search index) run inside the cluster on EBS volumes. This deployment sets up no scheduled backup for any of them, and rolling an app back does not roll its data back.</p>
+
+      <div class="callout bad">
+        <p><strong>Never bump the mongo, pgvector or meilisearch image tag in a routine release.</strong> A MongoDB major version changes its feature-compatibility level, a Postgres major version cannot open the old data directory, and Meilisearch versions need an export and re-import. Treat each as its own change: back up, rehearse on nonprod, then do prod.</p>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">&middot;</span><h3>Back up before any data-affecting change</h3></div>
+        <p class="what">Tested on 2 Oct 2026 against the nonprod databases: dump, copy to your workstation, clean up. Swap the namespace to <code>mosaic-ai</code> for prod. The <code>tar: Removing leading '/'</code> message is harmless.</p>
+        <div class="cmd"><p class="label">MongoDB</p>
+          <pre><code>$ns = "mosaic-ai"
+$mongo = kubectl -n $ns get pod -l app.kubernetes.io/component=mongodb -o jsonpath="{.items[0].metadata.name}"
+kubectl -n $ns exec $mongo -- mongodump --archive=/tmp/mongo.archive --gzip
+kubectl cp "${ns}/${mongo}:/tmp/mongo.archive" ".\mongo-$(Get-Date -Format yyyyMMdd).archive"
+kubectl -n $ns exec $mongo -- rm -f /tmp/mongo.archive</code><button class="copy-btn">copy</button></pre></div>
+        <div class="cmd"><p class="label">Postgres (rag_api vector store)</p>
+          <pre><code>$pg = kubectl -n $ns get pod -l app.kubernetes.io/component=vectordb -o jsonpath="{.items[0].metadata.name}"
+kubectl -n $ns exec $pg -- pg_dump -U myuser -d mydatabase -Fc -f /tmp/vectordb.dump
+kubectl cp "${ns}/${pg}:/tmp/vectordb.dump" ".\vectordb-$(Get-Date -Format yyyyMMdd).dump"
+kubectl -n $ns exec $pg -- rm -f /tmp/vectordb.dump</code><button class="copy-btn">copy</button></pre></div>
+        <p class="fixed-note">The prod dump contains real user conversations. Move it straight to an access-controlled location and delete the local copy. A whole-volume EBS snapshot is the faster option for large data; ask the infra team whether your IAM user may create snapshots.</p>
+      </div>
+
+      <div class="phase">
+        <div class="phase-head"><span class="phase-num">&middot;</span><h3>Restore</h3></div>
+        <p class="what">Rehearse this on nonprod before you need it in anger. A backup that has never been restored is a hope, not a backup.</p>
+        <div class="cmd"><pre><code># MongoDB: copy the archive in, then restore (drops and recreates collections)
+kubectl cp ".\mongo-20261002.archive" "${ns}/${mongo}:/tmp/mongo.archive"
+kubectl -n $ns exec $mongo -- mongorestore --archive=/tmp/mongo.archive --gzip --drop
+
+# Postgres
+kubectl cp ".\vectordb-20261002.dump" "${ns}/${pg}:/tmp/vectordb.dump"
+kubectl -n $ns exec $pg -- pg_restore -U myuser -d mydatabase --clean --if-exists /tmp/vectordb.dump</code><button class="copy-btn">copy</button></pre></div>
+      </div>
+    </section>
+
+    <!-- 5b MOVING A VOLUME -->
+    <section class="wb-sec" id="wb-vol" style="margin-top:30px">
+      <h3 class="sub">Moving a volume to a different storage class</h3>
+      <p class="sec-sub" style="margin-bottom:10px">Done for the chat api's <code class="mono">uploads</code> and <code class="mono">interactive-help-cache</code> volumes on 2 Oct 2026 (single-attach EBS to shared EFS, class <code class="mono">efs-sc</code>), so the api can use the RollingUpdate strategy. A claim's storage class and access mode cannot be edited, so the claim is deleted and recreated. This causes one outage of a few minutes. Rehearse on nonprod first; it took about four minutes there.</p>
+      <div class="cmd"><pre><code>$ns = "mosaic-ai-nonprod"     # then repeat with mosaic-ai
+$pod = kubectl -n $ns get pod -l app.kubernetes.io/component=api -o jsonpath="{.items[0].metadata.name}"
+
+# 1. copy the data out (here the help cache; uploads were empty)
+kubectl cp "${ns}/${pod}:/app/api/data/interactive-help-cache" ".\help-cache-backup"
+
+# 2. stop the api so the claims are released, then delete the two claims
+kubectl -n $ns scale deploy/mosaic-ai-chat-api --replicas=0
+kubectl -n $ns wait --for=delete pod -l app.kubernetes.io/component=api --timeout=120s
+kubectl -n $ns delete pvc mosaic-ai-chat-uploads mosaic-ai-chat-interactive-help-cache
+
+# 3. with the new class and ReadWriteMany in the values file, Helm recreates them
+helm -n $ns upgrade --install mosaic-ai-chat deploy/helm/mosaic-ai-chat -f deploy/helm/mosaic-ai-chat/values.yaml -f deploy/helm/mosaic-ai-chat/values-nonprod.yaml --atomic --timeout 5m
+
+# 4. the pod has a new name now; look it up again, then copy the data back folder by folder
+$pod = kubectl -n $ns get pod -l app.kubernetes.io/component=api -o jsonpath="{.items[0].metadata.name}"
+Get-ChildItem .\help-cache-backup -Directory | ForEach-Object {
+  kubectl cp $_.FullName "${ns}/${pod}:/app/api/data/interactive-help-cache/$($_.Name)"
+}</code><button class="copy-btn">copy</button></pre></div>
+      <div class="cmd"><p class="label">values file keys that make it work (prod and nonprod)</p>
+        <pre><code>api:
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  uploads:
+    persistence: {storageClassName: efs-sc, accessMode: ReadWriteMany}
+  interactiveHelp:
+    cache:
+      persistence: {storageClassName: efs-sc, accessMode: ReadWriteMany}</code><button class="copy-btn">copy</button></pre></div>
+      <p class="fixed-note"><code>efs-sc</code> is the platform team's class on their shared EFS filesystem (it maps every file to uid 1000, which works for this app). Keep databases off it.</p>
+    </section>
+
+    <!-- 6 CONFIG -->
+    <section class="wb-sec" id="wb-cfg">
+      <p class="sec-tag">Section 6</p>
+      <h2>Config and secret changes</h2>
+      <p class="sec-sub">Changes with no new image. The one trap: a ConfigMap or Secret change does not restart pods, because the Deployment refers to them by name only and the chart has no checksum annotation.</p>
+
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Changing</th><th>Where</th><th>Then</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="sym">A non-secret setting (domain, feature flags, limits)</td>
+              <td>Values file (<code class="mono">api.config.*</code>), then <code class="mono">helm upgrade</code>.</td>
+              <td>Restart the deployment, then confirm with <code class="mono">kubectl -n mosaic-ai exec deploy/mosaic-ai-chat-api -- printenv NAME</code>.</td>
+            </tr>
+            <tr>
+              <td class="sym">A secret value (keys, SAML settings)</td>
+              <td>Kubus: Secret, Data tab, edit, Review &amp; apply. Or the kubectl route in the day 2 ops tab.</td>
+              <td>Restart the deployment and confirm with <code class="mono">printenv</code>. Until the restart, the old value is still in use.</td>
+            </tr>
+            <tr>
+              <td class="sym">The LibreChat config file</td>
+              <td>Recreate the ConfigMap <code class="mono">mosaic-ai-chat-librechat-config</code> from <code class="mono">librechat.yaml</code>.</td>
+              <td>Restart the deployment.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cmd"><p class="label">restart, wait, and take a safety copy of a Secret before editing it (store the copy encrypted and delete it afterwards)</p>
+        <pre><code>kubectl -n mosaic-ai get secret mosaic-ai-chat-secrets -o yaml &gt; secrets-backup.yaml
+kubectl -n mosaic-ai rollout restart deployment/mosaic-ai-chat-api
+kubectl -n mosaic-ai rollout status deployment/mosaic-ai-chat-api --timeout=300s</code><button class="copy-btn">copy</button></pre></div>
+
+      <h3 class="sub">What a secret rotation does to users</h3>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Secret</th><th>Effect of changing it</th></tr></thead>
+          <tbody>
+            <tr><td class="sym"><code class="mono">JWT_SECRET</code>, <code class="mono">JWT_REFRESH_SECRET</code></td><td>Every signed-in user is logged out. Safe, and sometimes the point.</td></tr>
+            <tr><td class="sym"><code class="mono">CREDS_KEY</code>, <code class="mono">CREDS_IV</code></td><td>API keys that users saved inside the app can no longer be decrypted. They must enter them again. Change only when forced to.</td></tr>
+            <tr><td class="sym"><code class="mono">POSTGRES_PASSWORD</code></td><td>Also set inside the Postgres data directory. Changing only the Secret locks rag_api out of its own database.</td></tr>
+            <tr><td class="sym"><code class="mono">MEILI_MASTER_KEY</code></td><td>The api and Meilisearch must change together, then the index may need rebuilding.</td></tr>
+            <tr><td class="sym">SAML certificate</td><td>The identity provider's signing certificate in <code class="mono">mosaic-ai-chat-certs</code> expires on <strong>16 April 2029</strong>. If Microsoft rotates it earlier, SSO stops until the new certificate is swapped in.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 7 VERIFY -->
+    <section class="wb-sec" id="wb-verify">
+      <p class="sec-tag">Section 7</p>
+      <h2>Verification after any change</h2>
+      <p class="sec-sub">Run all of it after every deployment, to nonprod and to prod. Replace the host for nonprod. Use <code class="mono">-k</code> on curl only while the certificate request with the infra team is still open.</p>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Check</th><th>Command</th><th>Pass looks like</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Rollout finished</td><td><code class="mono">kubectl -n mosaic-ai rollout status deploy/mosaic-ai-chat-api --timeout=300s</code></td><td>"successfully rolled out"</td></tr>
+            <tr><td class="sym">Pods ready, none restarting</td><td><code class="mono">kubectl -n mosaic-ai get pods</code></td><td>Every pod <code class="mono">n/n</code> and Running. Watch the RESTARTS column for new increases. rag-api's 5 older restarts date from first start and are expected.</td></tr>
+            <tr><td class="sym">Right image is live</td><td><code class="mono">kubectl -n mosaic-ai get deploy mosaic-ai-chat-api -o jsonpath="{.spec.template.spec.containers[0].image}"</code></td><td>Ends in the tag you deployed.</td></tr>
+            <tr><td class="sym">App answers</td><td><code class="mono">curl.exe -sk -o NUL -w "%{http_code}" https://prod.ai.mosaicinsurance.com/health</code></td><td><code class="mono">200</code></td></tr>
+            <tr><td class="sym">Config is as intended</td><td><code class="mono">curl.exe -sk https://prod.ai.mosaicinsurance.com/api/config</code></td><td><code class="mono">samlLoginEnabled</code> and <code class="mono">socialLoginEnabled</code> true, <code class="mono">serverDomain</code> is the right host.</td></tr>
+            <tr><td class="sym">Logs are quiet</td><td><code class="mono">kubectl -n mosaic-ai logs deploy/mosaic-ai-chat-api --since=10m | Select-String "error|ECONNREFUSED"</code></td><td>No new errors. The warning "Ignoring extra certs ... corporate-ca.pem" is known and harmless.</td></tr>
+            <tr><td class="sym">Internal-only services</td><td><code class="mono">kubectl -n mosaic-ai get svc</code>, then <code class="mono">kubectl -n mosaic-ai port-forward svc/&lt;name&gt; 8080:&lt;port&gt;</code> and <code class="mono">curl.exe localhost:8080/health</code></td><td>200. Worldmonitor's path is <code class="mono">/api/sidecar-health</code>.</td></tr>
+            <tr><td class="sym">A real user journey</td><td>Open the login page, sign in with SSO, send one message, upload one file.</td><td>Each step completes. SSO works only after the Microsoft team has registered the host.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 8 TROUBLESHOOTING -->
+    <section class="wb-sec" id="wb-fix">
+      <p class="sec-tag">Section 8</p>
+      <h2>Troubleshooting</h2>
+      <p class="sec-sub">Every row here happened during this build, so the cause and fix are known rather than guessed.</p>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Symptom</th><th>Usual cause</th><th>Check and fix</th></tr></thead>
+          <tbody>
+            <tr>
+              <td class="sym">Pod shows ImagePullBackOff or ErrImagePull</td>
+              <td>The tag was mistyped or never pushed.</td>
+              <td><code class="mono">kubectl -n mosaic-ai describe pod &lt;pod&gt;</code> (read Events), then <code class="mono">aws ecr describe-images --repository-name &lt;repo&gt; --image-ids imageTag=&lt;tag&gt;</code>. Fix the tag and upgrade.</td>
+            </tr>
+            <tr>
+              <td class="sym">Pushed new code, nothing changed</td>
+              <td>The tag is the same text as before. Helm sees no difference and nodes reuse their cached image.</td>
+              <td>Use a new tag for every release (step B). A restart alone can reuse the cached copy too.</td>
+            </tr>
+            <tr>
+              <td class="sym">CrashLoopBackOff</td>
+              <td>A missing environment key, an unreachable dependency, or a probe that fires too early.</td>
+              <td><code class="mono">kubectl -n mosaic-ai logs &lt;pod&gt; --previous</code> and <code class="mono">kubectl -n mosaic-ai get events --sort-by=.lastTimestamp</code>. Seen before: MongoDB listening only on localhost (fixed with <code class="mono">--bind_ip_all</code>) and probes with too short a delay (now 30 s).</td>
+            </tr>
+            <tr>
+              <td class="sym">Pod stuck in ContainerCreating, volume attach error</td>
+              <td>The volume can attach to one node at a time and the old pod still holds it.</td>
+              <td>This is why mongodb, vectordb and meilisearch use Recreate: wait for the old pod to terminate. The chat api no longer has this problem because its volumes are on EFS. If a Recreate pod stays stuck, look at <code class="mono">kubectl describe pod</code> Events before deleting anything.</td>
+            </tr>
+            <tr>
+              <td class="sym">Postgres refuses to start: directory not empty</td>
+              <td>A new EBS volume contains a <code class="mono">lost+found</code> folder.</td>
+              <td>The chart sets <code class="mono">PGDATA</code> to a sub-folder to avoid it. Keep that setting if a volume is ever recreated.</td>
+            </tr>
+            <tr>
+              <td class="sym">Config change has no effect</td>
+              <td>Pods were not restarted.</td>
+              <td><code class="mono">kubectl -n mosaic-ai rollout restart deployment/&lt;name&gt;</code>, then check with <code class="mono">printenv</code>.</td>
+            </tr>
+            <tr>
+              <td class="sym">SSO button missing from the login page</td>
+              <td><code class="mono">ALLOW_SOCIAL_LOGIN</code> is false. The SAML button is hidden behind it.</td>
+              <td>Set <code class="mono">api.config.allowSocialLogin: "true"</code>, upgrade, restart. Confirm <code class="mono">socialLoginEnabled</code> in <code class="mono">/api/config</code>.</td>
+            </tr>
+            <tr>
+              <td class="sym">SSO error AADSTS700016</td>
+              <td>The host's Entity ID is not registered in the Entra ID Enterprise App.</td>
+              <td>First confirm the pod has the right <code class="mono">SAML_ISSUER</code> with <code class="mono">printenv</code>. If it does, the Microsoft team must add the Identifier and Reply URL.</td>
+            </tr>
+            <tr>
+              <td class="sym">Browser says "Not secure" on the bare domain</td>
+              <td>The shared load balancer's certificate covers only <code class="mono">*.prod.ai...</code> subdomains.</td>
+              <td>The infra team must attach the ACM certificate for the bare host as an extra certificate on the listener.</td>
+            </tr>
+            <tr>
+              <td class="sym">"Unable to locate credentials", or kubectl cannot authenticate</td>
+              <td>The <code class="mono">mosaic</code> AWS profile is missing, or the access key was rotated.</td>
+              <td><code class="mono">aws sts get-caller-identity --profile mosaic</code>. Re-run <code class="mono">aws configure --profile mosaic</code>.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 9 CHEAT SHEET -->
+    <section class="wb-sec" id="wb-ops">
+      <p class="sec-tag">Section 9</p>
+      <h2>Routine commands</h2>
+      <p class="sec-sub">Each has a click equivalent in Kubus (day 2 ops tab). Swap <code class="mono">mosaic-ai</code> for <code class="mono">mosaic-ai-nonprod</code> as needed.</p>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Task</th><th>Command</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Overview of everything</td><td><code class="mono">kubectl -n mosaic-ai get pods,svc,httproute</code></td></tr>
+            <tr><td class="sym">Follow logs</td><td><code class="mono">kubectl -n mosaic-ai logs -f deploy/mosaic-ai-chat-api</code></td></tr>
+            <tr><td class="sym">Shell inside a container</td><td><code class="mono">kubectl -n mosaic-ai exec -it deploy/mosaic-ai-chat-api -- sh</code></td></tr>
+            <tr><td class="sym">Restart without changing anything</td><td><code class="mono">kubectl -n mosaic-ai rollout restart deploy/&lt;name&gt;</code></td></tr>
+            <tr><td class="sym">Revision history of a release</td><td><code class="mono">helm -n mosaic-ai history &lt;release&gt;</code></td></tr>
+            <tr><td class="sym">Values a release is using</td><td><code class="mono">helm -n mosaic-ai get values &lt;release&gt;</code></td></tr>
+            <tr><td class="sym">Recent cluster events</td><td><code class="mono">kubectl -n mosaic-ai get events --sort-by=.lastTimestamp</code></td></tr>
+            <tr><td class="sym">Exact image digest running</td><td><code class="mono">kubectl -n mosaic-ai get pod -l app.kubernetes.io/component=api -o jsonpath="{.items[0].status.containerStatuses[0].imageID}"</code></td></tr>
+            <tr><td class="sym">Reach a private service locally</td><td><code class="mono">kubectl -n mosaic-ai port-forward svc/mosaic-ai-chat-api 3080:3080</code></td></tr>
+            <tr><td class="sym">Change replica count (temporary)</td><td><code class="mono">kubectl -n mosaic-ai scale deploy/mosaic-common-service --replicas=3</code>. The next <code class="mono">helm upgrade</code> resets it to the chart's value.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 10 HOUSEKEEPING -->
+    <section class="wb-sec" id="wb-own">
+      <p class="sec-tag">Section 10</p>
+      <h2>Housekeeping, ownership and the release log</h2>
+      <p class="sec-sub">The things that are easy to forget until they hurt.</p>
+
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Keep copies of the values files.</strong> <code class="mono">values-prod.yaml</code> and <code class="mono">values-nonprod.yaml</code> are ignored by git, so today they exist only on the machine used to deploy. Store a copy in a private, access-controlled place. They hold no passwords, but they are the only record of how prod is configured.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Lock the registry down once versioned tags are in use.</strong> Until then, making a repository immutable would block pushes to <code class="mono">:latest</code>. Do not run this before section 4's baseline step.</p></div>
+      <div class="cmd" style="margin-top:6px"><pre><code>aws ecr put-image-tag-mutability --repository-name mosaic-ai-chat --image-tag-mutability IMMUTABLE --region eu-west-1
+aws ecr put-image-scanning-configuration --repository-name mosaic-ai-chat --image-scanning-configuration scanOnPush=true --region eu-west-1</code><button class="copy-btn">copy</button></pre></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Rotate the AWS access key on a schedule.</strong> Kubectl, Helm, Docker and Kubus all depend on it. Create the new key, run <code class="mono">aws configure --profile mosaic</code>, confirm with <code class="mono">kubectl get nodes</code>, then delete the old key.</p></div>
+      <div class="prosline"><span class="mark">&check;</span><p><strong>Diary dates.</strong> SAML signing certificate expires 16 April 2029. Set a reminder for March 2029 to confirm Microsoft has a replacement ready.</p></div>
+
+      <h3 class="sub">Who to ask</h3>
+      <div class="map-wrap">
+        <table class="map-table">
+          <thead><tr><th>Team</th><th>Owns</th><th>Ask them for</th></tr></thead>
+          <tbody>
+            <tr><td class="sym">Platform / infra</td><td>The EKS cluster and nodes, the shared load balancer and Envoy Gateway, the <code class="mono">mosaic</code> namespace, cluster access for your IAM user.</td><td>Attaching ACM certificates to the load balancer, cluster permission changes, node or capacity problems, EBS snapshots.</td></tr>
+            <tr><td class="sym">Microsoft / IT</td><td>Entra ID, the SSO Enterprise App and its signing certificate, company laptops.</td><td>Registering new Identifier and Reply URL values, certificate rotation, laptop software restrictions.</td></tr>
+            <tr><td class="sym">App team (us)</td><td>The images, ECR repositories, Helm releases and values in <code class="mono">mosaic-ai</code> and <code class="mono">mosaic-ai-nonprod</code>, and the DNS records for the two <code class="mono">ai.</code> hostnames.</td><td>Everything in this workbook.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="sub">Release log</h3>
+      <p class="sec-sub" style="margin-bottom:10px">One row per deployment. Copy the table into a shared document and keep it there.</p>
+      <div class="map-wrap">
+        <table class="map-table log-table">
+          <thead><tr><th>Date</th><th>Service &middot; env</th><th>Image tag</th><th>Helm revision</th><th>Verified</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>2026-09-30</td><td>mosaic-ai-chat &middot; prod</td><td><code class="mono">latest</code></td><td>1</td><td>health 200</td><td>Initial deployment</td></tr>
+            <tr><td>2026-10-01</td><td>mosaic-ai-chat &middot; prod</td><td><code class="mono">latest</code></td><td>7 &rarr; 8</td><td>config endpoint</td><td>Config only: allowSocialLogin, allowSocialRegistration, pdfVisionOcrMaxPages</td></tr>
+            <tr><td>2026-10-01</td><td>mosaic-ai-chat &middot; nonprod</td><td><code class="mono">latest</code></td><td>1 &rarr; 2</td><td>config endpoint</td><td>Same config change; environment created this day</td></tr>
+            <tr><td>2026-10-02</td><td>mosaic-ai-chat &middot; ECR</td><td><code class="mono">baseline-20261002</code></td><td>n/a</td><td>digest match</td><td>Rollback target for the running prod image, sha256:90ee2030&hellip;</td></tr>
+            <tr><td>2026-10-02</td><td>mosaic-ai-chat &middot; nonprod</td><td><code class="mono">latest</code></td><td>2 &rarr; 3</td><td>64/64 health checks through a rollout</td><td>api to RollingUpdate; uploads and help cache moved to EFS (RWX)</td></tr>
+            <tr><td>2026-10-02</td><td>mosaic-ai-chat &middot; prod</td><td><code class="mono">latest</code></td><td>8 &rarr; 9</td><td>67/67 health checks through a rollout</td><td>Same change. Help cache (7.9 MB) backed up and restored; uploads were empty.</td></tr>
+            <tr><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td></tr>
+            <tr><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td><td class="blank">&mdash;</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </section>
+</main>
+
+<footer class="page">Built for the MosAIc platform &middot; everything here also lives as real files in each service's repo.</footer>
+
+<script>
+(function(){
+  var tabs = [
+    {btn: document.getElementById('tab-story'), panel: document.getElementById('panel-story')},
+    {btn: document.getElementById('tab-tech'), panel: document.getElementById('panel-tech')},
+    {btn: document.getElementById('tab-before'), panel: document.getElementById('panel-before')},
+    {btn: document.getElementById('tab-kubus'), panel: document.getElementById('panel-kubus')},
+    {btn: document.getElementById('tab-workbook'), panel: document.getElementById('panel-workbook')}
+  ];
+  tabs.forEach(function(t){
+    t.btn.addEventListener('click', function(){
+      tabs.forEach(function(o){
+        o.panel.hidden = (o !== t);
+        o.btn.setAttribute('aria-selected', o === t ? 'true' : 'false');
+      });
+      try { localStorage.setItem('mosaic-harbor-tab', t.btn.id); } catch(e){}
+    });
+  });
+  try {
+    var saved = localStorage.getItem('mosaic-harbor-tab');
+    if (saved) {
+      var match = tabs.find(function(t){ return t.btn.id === saved; });
+      if (match) match.btn.click();
+    }
+  } catch(e){}
+
+  var boxes = document.querySelectorAll('#preflight input[type="checkbox"]');
+  var STORE = 'mosaic-harbor-preflight';
+  function saveTicks(){
+    try {
+      var on = [];
+      boxes.forEach(function(b){ if (b.checked) on.push(b.getAttribute('data-k')); });
+      localStorage.setItem(STORE, JSON.stringify(on));
+    } catch(e){}
+  }
+  try {
+    var ticked = JSON.parse(localStorage.getItem(STORE) || '[]');
+    boxes.forEach(function(b){ b.checked = ticked.indexOf(b.getAttribute('data-k')) !== -1; });
+  } catch(e){}
+  boxes.forEach(function(b){ b.addEventListener('change', saveTicks); });
+  var clearBtn = document.getElementById('clear-ticks');
+  if (clearBtn) clearBtn.addEventListener('click', function(){
+    boxes.forEach(function(b){ b.checked = false; });
+    saveTicks();
+  });
+
+  document.querySelectorAll('.copy-btn').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var codeEl = btn.previousElementSibling;
+      var text = codeEl ? codeEl.textContent : '';
+      var done = function(){ var old = btn.textContent; btn.textContent = 'copied'; setTimeout(function(){ btn.textContent = old; }, 1200); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(function(){
+          var r = document.createRange(); r.selectNode(codeEl);
+          var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+          done();
+        });
+      }
+    });
+  });
+})();
+</script>

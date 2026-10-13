@@ -21,11 +21,36 @@ class Settings(BaseSettings):
     pool_max_conns: int = 10
     query_timeout_seconds: float = 30.0
 
+    # SharePoint file access via Microsoft Graph (app-only client credentials).
+    # `sharepoint_root_url` is the folder every request path is relative to: the
+    # browser URL of a folder, e.g.
+    #   https://contoso.sharepoint.com/sites/Team/Shared Documents/Reports
+    # The endpoints cannot reach anything outside it. See app/sharepoint_client.py.
+    sharepoint_root_url: str = ""
+    sharepoint_tenant_id: str = ""
+    sharepoint_client_id: str = ""
+    # Secret: set via the environment (a Kubernetes Secret in the cluster), never
+    # in a committed file.
+    sharepoint_client_secret: str = ""
+    # Turns off every endpoint that changes SharePoint (write, create, delete).
+    sharepoint_read_only: bool = False
+    sharepoint_max_file_bytes: int = 50 * 1024 * 1024
+    sharepoint_timeout_seconds: float = 30.0
+    # login.microsoftonline.com resolves IPv6-only on some of our networks and the
+    # containers have no IPv6 route; pins the token request to IPv4 (the chat app
+    # does the same). Only affects the token call, not Graph itself.
+    sharepoint_token_force_ipv4: bool = True
+
     # Governance
     audit_log_table: str = "mosaic_common_service-audit-log"
 
     class Config:
         env_prefix = "GATEWAY_"
+        # Local runs read settings (including secrets) from a gitignored .env in the
+        # working directory; real environment variables always win over it. In
+        # containers there is no .env, so only the environment is used.
+        env_file = ".env"
+        extra = "ignore"
 
 
 @lru_cache

@@ -32,6 +32,25 @@ def set_audit_sink(sink: AuditSink) -> None:
     _sink = sink
 
 
+def log_sharepoint(
+    *,
+    client_host: str | None,
+    operation: str,
+    path: str,
+    status: str,
+) -> None:
+    _sink.write(
+        {
+            "timestamp": datetime.datetime.utcnow().isoformat() + "Z",
+            "client_host": client_host,
+            "service": "sharepoint",
+            "operation": operation,
+            "path": path,
+            "status": status,
+        }
+    )
+
+
 def log_query(
     *,
     client_host: str | None,

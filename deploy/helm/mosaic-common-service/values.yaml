@@ -71,6 +71,26 @@ config:
   # volumeMount path below, which is derived from this value automatically.
   credentialsFilePath: /etc/mosaic_common_service/redshift-credentials.json
 
+  # SharePoint file endpoints (/sharepoint/*, see app/routes/sharepoint.py).
+  # sharepointRootUrl is the folder every request path is relative to, as the
+  # browser URL of that folder, e.g.
+  #   https://contoso.sharepoint.com/sites/Team/Shared Documents/Reports
+  # The endpoints answer 503 until all of the first three are set and the
+  # `sharepoint` Secret below exists.
+  sharepointRootUrl: ""
+  sharepointTenantId: ""
+  sharepointClientId: ""
+  # true turns off write, create and delete, leaving read and list.
+  sharepointReadOnly: false
+
+# The SharePoint app registration's client secret, read from a pre-created Secret
+# (never put it in values). Create it with:
+#   kubectl -n <ns> create secret generic mosaic-common-service-sharepoint \
+#     --from-literal=client-secret='<secret value>'
+sharepoint:
+  existingSecret: ""
+  existingSecretKey: client-secret
+
 # Redshift {"username": "...", "password": "..."} JSON, mounted read-only as a
 # single file at config.credentialsFilePath. Recommended: pre-create the Secret
 # out-of-band (kubectl, CI/CD, or External Secrets Operator syncing from AWS

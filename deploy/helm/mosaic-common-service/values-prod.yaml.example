@@ -9,6 +9,15 @@ replicaCount: 2
 
 config:
   redshiftHost: "your-cluster.xxxxxxxxxxxx.us-east-1.redshift.amazonaws.com"
+  # SharePoint endpoints: the folder every request path is relative to, plus the
+  # (non-secret) ids of the Entra app registration the service signs in as.
+  sharepointRootUrl: "https://contoso.sharepoint.com/sites/Team/Shared Documents/Reports"
+  sharepointTenantId: "00000000-0000-0000-0000-000000000000"
+  sharepointClientId: "00000000-0000-0000-0000-000000000000"
+
+# Pre-create this Secret yourself; the client secret never goes in values.
+sharepoint:
+  existingSecret: mosaic-common-service-sharepoint
 
 # Pre-create this Secret yourself (see README-deploy.md) - do not set
 # redshiftCredentials.create/username/password here.

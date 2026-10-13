@@ -47,6 +47,14 @@ spec:
           envFrom:
             - configMapRef:
                 name: {{ include "mosaic-common-service.fullname" . }}-config
+          {{- if .Values.sharepoint.existingSecret }}
+          env:
+            - name: GATEWAY_SHAREPOINT_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.sharepoint.existingSecret }}
+                  key: {{ .Values.sharepoint.existingSecretKey }}
+          {{- end }}
           {{- if .Values.redshiftCredentials.enabled }}
           volumeMounts:
             - name: redshift-credentials
