@@ -192,8 +192,10 @@ def parse_root_url(url: str) -> RootLocation:
             f"GATEWAY_SHAREPOINT_ROOT_URL '{url}' is not a full URL (expected https://<tenant>.sharepoint.com/...)."
         )
 
+    # parse_qs already percent-decodes the id value, so only the path needs unquoting;
+    # decoding the id twice would corrupt a folder name that contains a literal '%'.
     folder_id = parse_qs(parsed.query).get("id")
-    server_path = unquote(folder_id[0]) if folder_id else unquote(parsed.path)
+    server_path = folder_id[0] if folder_id else unquote(parsed.path)
     segments = [s for s in server_path.split("/") if s]
 
     if segments and segments[0].lower() in ("sites", "teams"):

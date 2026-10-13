@@ -364,6 +364,25 @@ def test_parse_address_bar_url_with_id_parameter():
     assert (loc.site_path, loc.library, loc.folder) == ("/sites/Team", "Shared Documents", ["Reports"])
 
 
+def test_parse_the_real_data_office_address_bar_url():
+    url = (
+        "https://mymosaic1609.sharepoint.com/sites/DataOffice/Shared%20Documents/Forms/AllItems.aspx"
+        "?id=%2Fsites%2FDataOffice%2FShared%20Documents%2FMosAIc%5Fsharepoint"
+        "&viewid=94e8ae35%2D6c73%2D4fb6%2D8b4c%2D7bcd8a0ac457&as=json"
+    )
+    loc = parse_root_url(url)
+    assert (loc.hostname, loc.site_path, loc.library, loc.folder) == (
+        "mymosaic1609.sharepoint.com", "/sites/DataOffice", "Shared Documents", ["MosAIc_sharepoint"],
+    )
+
+
+def test_parse_keeps_a_literal_percent_in_a_folder_name():
+    # %2541 in the address bar is the folder name "100%41"; decoding twice would turn it into "100A".
+    url = "https://contoso.sharepoint.com/sites/T/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FT%2FShared%20Documents%2F100%2541"
+    assert parse_root_url(url).folder == ["100%41"]
+    assert parse_root_url("https://contoso.sharepoint.com/sites/T/Shared%20Documents/100%2541").folder == ["100%41"]
+
+
 def test_parse_library_root_and_site_root():
     loc = parse_root_url("https://contoso.sharepoint.com/sites/Team/Shared%20Documents/Forms/AllItems.aspx")
     assert (loc.library, loc.folder) == ("Shared Documents", [])
